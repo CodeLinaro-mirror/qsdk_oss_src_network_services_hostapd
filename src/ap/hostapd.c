@@ -2770,6 +2770,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 	}
 	hapd->started = 1;
 	dl_list_init(&hapd->tk_records);
+	dl_list_init(&hapd->pmk_records);
 
 	if (!first) {
 		u8 *addr = hapd->own_addr;

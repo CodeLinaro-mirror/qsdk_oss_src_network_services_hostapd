@@ -404,6 +404,16 @@ struct tk_record {
 	struct dl_list list;
 };
 
+/* PMK storage for testbed negative tests, keyed by peer MAC address so
+ * GET_PREVIOUS_PMK can retrieve a key after it has been superseded by a
+ * new PMKSA (e.g. PMKSA caching re-authentication). */
+struct pmk_record {
+	u8 addr[ETH_ALEN];
+	u8 pmk[PMK_LEN_MAX];
+	size_t pmk_len;
+	struct dl_list list;
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -839,6 +849,7 @@ struct hostapd_data {
 	bool rtt_role_fw_sent;
 
 	struct dl_list tk_records; /* Transaction Key storage for testbed */
+	struct dl_list pmk_records; /* PMK storage for testbed */
 };
 /* True if hapd has a pending re-enable for any reason (user-disabled,
  * HT-scan deferred, or CAC in progress). */

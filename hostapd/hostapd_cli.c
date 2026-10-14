@@ -865,6 +865,28 @@ static int hostapd_cli_cmd_get_previous_tk(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_get_previous_pmk(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	char buf[300];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid GET_PREVIOUS_PMK command: needs one argument "
+		       "(STA address)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "GET_PREVIOUS_PMK %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long GET_PREVIOUS_PMK command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+
 static int wpa_ctrl_command_sta(struct wpa_ctrl *ctrl, const char *cmd,
 				char *addr, size_t addr_len, int print)
 {
@@ -3963,6 +3985,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> <key_idx> = dump TK for station (debug only)" },
 	{ "get_previous_tk", hostapd_cli_cmd_get_previous_tk, NULL,
 	  "<addr> = get previously installed TK for station (testbed only)" },
+	{ "get_previous_pmk", hostapd_cli_cmd_get_previous_pmk, NULL,
+	  "<addr> = get previously installed PMK for station (testbed only)" },
 	{ "help", hostapd_cli_cmd_help, hostapd_cli_complete_help,
 	  "= show this usage help" },
 	{ "interface", hostapd_cli_cmd_interface, hostapd_complete_interface,

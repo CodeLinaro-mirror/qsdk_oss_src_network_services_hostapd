@@ -17990,4 +17990,35 @@ void hostapd_store_tk(struct hostapd_data *hapd, const u8 *addr,
 	}
 }
 
+
+void hostapd_store_pmk(struct hostapd_data *hapd, const u8 *addr,
+		       const u8 *pmk, size_t pmk_len)
+{
+	struct pmk_record *rec, *existing = NULL;
+
+	if (!hapd || !addr || !pmk || pmk_len == 0 || pmk_len > sizeof(rec->pmk))
+		return;
+
+	dl_list_for_each(rec, &hapd->pmk_records, struct pmk_record, list) {
+		if (os_memcmp(rec->addr, addr, ETH_ALEN) == 0) {
+			existing = rec;
+			break;
+		}
+	}
+
+	if (existing) {
+		os_memcpy(existing->pmk, pmk, pmk_len);
+		existing->pmk_len = pmk_len;
+	} else {
+		rec = os_zalloc(sizeof(*rec));
+		if (!rec)
+			return;
+
+		os_memcpy(rec->addr, addr, ETH_ALEN);
+		os_memcpy(rec->pmk, pmk, pmk_len);
+		rec->pmk_len = pmk_len;
+		dl_list_add(&hapd->pmk_records, &rec->list);
+	}
+}
+
 #endif /* CONFIG_NATIVE_WINDOWS */
