@@ -862,8 +862,6 @@ int hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
 int hostapd_trigger_npca_ecu(struct hostapd_data *hapd,
 			     struct hostapd_uhr_npca_params *npca)
 {
-	struct hostapd_bss_config *conf = hapd->conf;
-	struct uhr_params_update_config *upd = &conf->uhr_params_update;
 	struct hostapd_uhr_npca_params new_npca;
 	struct hostapd_data *bss;
 	struct hostapd_hw_modes *mode;
@@ -899,7 +897,7 @@ int hostapd_trigger_npca_ecu(struct hostapd_data *hapd,
 		if (!bss->started)
 			hostapd_update_ecu_params(bss);
 
-		bss->uhr_ecu.countdown_timer = upd->adv_notification_interval;
+		bss->uhr_ecu.countdown_timer = bss->conf->uhr_params_update.adv_notification_interval;
 		if (hostapd_send_uhr_params_critical_update(bss)) {
 			wpa_printf(MSG_DEBUG,
 				   "UPDATE_UHR_FEATURES: failed to send "
