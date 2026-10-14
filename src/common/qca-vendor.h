@@ -28238,9 +28238,10 @@ enum qca_wlan_vendor_attr_tx_mon_scan_stats {
 
 /**
  * enum qca_wlan_vendor_attr_rx_undecoded_stats - Attributes for
- * undecoded metadata capture statistics (wifi6 / QCN9074 only).
+ * undecoded metadata capture statistics.
  * Nested under QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_UNDECODED_STATS.
  * Only present when undecoded metadata capture is armed.
+ * The four mask words cover PHY error reasons 0 through 127.
  *
  * @QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_COUNT: u32 — total undecoded
  *   PPDUs processed (abort detected and passed error mask filter).
@@ -28248,13 +28249,19 @@ enum qca_wlan_vendor_attr_tx_mon_scan_stats {
  *   PHY error mask bits 0–31.
  * @QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT: u32 —
  *   active PHY error mask bits 32–63.
+ * @QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT2: u32 —
+ *   active PHY error mask bits 64–95.
+ * @QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT3: u32 —
+ *   active PHY error mask bits 96–127.
  */
 enum qca_wlan_vendor_attr_rx_undecoded_stats {
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_COUNT,
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK,
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT,
-	/* array of u32 per-abort-reason counters (64 entries, reasons 0-63) */
+	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT2,
+	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_PHY_ERR_MASK_CONT3,
+	/* array of u32 per-abort-reason counters (128 entries, reasons 0-127) */
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_ERROR_ARRAY,
 
 	QCA_WLAN_VENDOR_ATTR_RX_UNDECODED_STATS_LAST,
