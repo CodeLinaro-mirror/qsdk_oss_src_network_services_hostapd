@@ -355,7 +355,6 @@ hostapd_bss_get_status(struct ubus_context *ctx, struct ubus_object *obj,
 	void *airtime_table, *dfs_table, *rrm_table, *wnm_table;
 	struct os_reltime now;
 	char ssid[SSID_MAX_LEN + 1];
-	char phy_name[17];
 	size_t ssid_len = SSID_MAX_LEN;
 	u8 channel = 0, op_class = 0;
 
@@ -386,8 +385,7 @@ hostapd_bss_get_status(struct ubus_context *ctx, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "bss_color", -1);
 #endif
 
-	snprintf(phy_name, 17, "%s", hapd->iface->phy);
-	blobmsg_add_string(&b, "phy", phy_name);
+	blobmsg_add_string(&b, "phy", hapd->iface->phy);
 
 	/* RRM */
 	rrm_table = blobmsg_open_table(&b, "rrm");
