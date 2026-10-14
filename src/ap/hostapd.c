@@ -4576,6 +4576,22 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 	setup_interface2(iface);
 }
 
+
+/**
+ * hostapd_set_iface_phy - Set interface PHY identifier
+ * @iface: Interface to update
+ * @phy: PHY identifier
+ *
+ * Keep phy and phy_id synchronized for compatibility with existing users.
+ */
+static void hostapd_set_iface_phy(struct hostapd_iface *iface,
+				     const char *phy)
+{
+	os_strlcpy(iface->phy, phy, sizeof(iface->phy));
+	os_strlcpy(iface->phy_id, phy, sizeof(iface->phy_id));
+}
+
+
 static int setup_interface(struct hostapd_iface *iface)
 {
 	struct hostapd_data *hapd = iface->bss[0];
@@ -4592,9 +4608,23 @@ static int setup_interface(struct hostapd_iface *iface)
 
 	if (!iface->phy[0]) {
 		const char *phy = hostapd_drv_get_radio_name(hapd);
+
 		if (phy) {
-			wpa_printf(MSG_DEBUG, "phy: %s", phy);
-			os_strlcpy(iface->phy, phy, sizeof(iface->phy));
+			char phy_name[sizeof(iface->phy)];
+
+			/*
+			 * Distinguish radios sharing the same PHY name using
+			 * the configured radio index.
+			 */
+			if (iface->conf->radio_idx >= 0)
+				os_snprintf(phy_name, sizeof(phy_name),
+					   "%s.%d", phy,
+					   iface->conf->radio_idx);
+			else
+				os_strlcpy(phy_name, phy, sizeof(phy_name));
+
+			hostapd_set_iface_phy(iface, phy_name);
+			wpa_printf(MSG_DEBUG, "phy: %s", phy_name);
 		}
 	}
 
@@ -7148,6 +7178,27 @@ static bool hostapd_check_dup_link(struct hostapd_data *tmp_hapd,
 
 
 /**
+ * hostapd_find_iface_by_phy - Find interface by PHY identifier
+ * @interfaces: Pointer to interfaces data
+ * @phy: PHY name
+ * Returns: Pointer to matching interface or %NULL if not found
+ */
+static struct hostapd_iface *
+hostapd_find_iface_by_phy(struct hapd_interfaces *interfaces,
+			    const char *phy)
+{
+	size_t i;
+
+	for (i = 0; i < interfaces->count; i++) {
+		if (os_strcmp(interfaces->iface[i]->phy_id, phy) == 0)
+			return interfaces->iface[i];
+	}
+
+	return NULL;
+}
+
+
+/**
  * hostapd_interface_init_bss - Read configuration file and init BSS data
  *
  * This function is used to parse configuration file for a BSS. This BSS is
@@ -7166,7 +7217,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 	struct hostapd_data *hapd;
 	struct hostapd_config *conf;
 	int k;
-	size_t i, bss_idx;
+	size_t bss_idx;
 
 	if (!phy || !*phy)
 		return NULL;
@@ -7175,15 +7226,11 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 	if (!conf)
 		return NULL;
 
-	for (i = 0; i < interfaces->count; i++) {
-		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0) {
-			iface = interfaces->iface[i];
-			break;
-		}
-	}
+	iface = hostapd_find_iface_by_phy(interfaces, phy);
 
-	wpa_printf(MSG_INFO, "Configuration file: %s (phy %s)%s",
-		   config_fname, phy, iface ? "" : " --> new PHY");
+	wpa_printf(MSG_INFO, "Configuration file: %s (phy %s radio_idx %d)%s",
+		   config_fname, phy, conf->radio_idx,
+		   iface ? "" : " --> new interface");
 
 	if (iface) {
 		struct hostapd_bss_config **tmp_conf;
@@ -7276,7 +7323,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		new_iface = iface = hostapd_init(interfaces, config_fname);
 		if (!iface)
 			return NULL;
-		os_strlcpy(iface->phy, phy, sizeof(iface->phy));
+		hostapd_set_iface_phy(iface, phy);
 		iface->interfaces = interfaces;
 		bss_idx = 0;
 	}
