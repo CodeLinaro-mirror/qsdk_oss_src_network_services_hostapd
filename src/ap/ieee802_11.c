@@ -11262,6 +11262,7 @@ initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 			bool set_beacon)
 {
 	u16 reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	bool epp_sta = ap_sta_is_epp(sta);
 
 	if (resp >= 0)
 		reply_res = send_assoc_resp(hapd,
@@ -11286,11 +11287,16 @@ initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 
 	/*
 	 * Remove the station in case transmission of a success response fails
-	 * (the STA was added associated to the driver) or if the station was
-	 * previously added unassociated.
+	 * (the STA was added associated to the driver) or if a non-EPP
+	 * station was previously added unassociated. For an EPP non-AP STA,
+	 * defer the cleanup until reception of the (Re)Association Response
+	 * TX-status callback so the STA context and its pairwise keys stay
+	 * available while the encrypted (Re)Association Response frame
+	 * carrying a failure status is transmitted and decrypted by the STA.
 	 */
 	if (sta && ((reply_res != WLAN_STATUS_SUCCESS &&
-		     resp == WLAN_STATUS_SUCCESS) || sta->added_unassoc)) {
+		     resp == WLAN_STATUS_SUCCESS) ||
+		    (sta->added_unassoc && !epp_sta))) {
 		hostapd_drv_sta_remove(hapd, sta->addr);
 		sta->added_unassoc = 0;
 	}
@@ -12646,6 +12652,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	u16 status;
 	struct sta_info *sta;
 	int new_assoc = 1;
+	bool epp_sta;
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
@@ -12662,6 +12669,8 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 				   " identified as link STA", MAC2STR(mgmt->da));
 		}
 	}
+
+	epp_sta = ap_sta_is_epp(sta);
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_sta_is_mld(hapd, sta) &&
@@ -12697,8 +12706,10 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			       HOSTAPD_LEVEL_DEBUG,
 			       "did not acknowledge association response");
 		sta->flags &= ~WLAN_STA_ASSOC_REQ_OK;
-		/* The STA is added only in case of SUCCESS */
-		if (status == WLAN_STATUS_SUCCESS) {
+		/* The STA is added only in case of SUCCESS, except for an EPP
+		 * STA whose driver entry was deferred past this TX-status
+		 * callback - remove it now that the frame has been handled. */
+		if (status == WLAN_STATUS_SUCCESS || epp_sta) {
 			hostapd_drv_sta_remove(hapd, sta->addr);
 			sta->added_unassoc = 0;
 		}
@@ -12708,8 +12719,15 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		goto handle_ml;
 	}
 
-	if (status != WLAN_STATUS_SUCCESS)
+	if (status != WLAN_STATUS_SUCCESS) {
+		/* Deferred EPP STA cleanup for a transmitted failure response
+		 * (see initiate_assoc_response()). */
+		if (epp_sta) {
+			hostapd_drv_sta_remove(hapd, sta->addr);
+			sta->added_unassoc = 0;
+		}
 		goto handle_ml;
+	}
 
 	/* Stop previous accounting session, if one is started, and allocate
 	 * new session id for the new session. */
