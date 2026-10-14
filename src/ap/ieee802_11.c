@@ -775,8 +775,10 @@ static u16 validate_security_profile_common(
 		return WLAN_STATUS_SUCCESS;
 
 	if (!elems->security_profile) {
-		/* SP IE is mandatory during PASN auth, and during (Re)Assoc */
+		/* SP IE is mandatory during PASN auth, and during (Re)Assoc of
+		 * a Wi-Fi 8 (UHR) station only. */
 		if (hapd->conf->security_profiles &&
+		    elems->uhr_capabilities &&
 		    (os_strcmp(auth_context, "PASN") == 0 ||
 		     os_strcmp(auth_context, "Assoc") == 0 ||
 		     os_strcmp(auth_context, "Reassoc") == 0)) {
@@ -7481,10 +7483,18 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 
 		if (hapd->conf->security_profiles) {
+			const char *sp_auth_context;
+
+			if (type == LINK_PARSE_UHR_RECONF_ASSOC ||
+			    type == LINK_PARSE_UHR_RECONF_LINK)
+				sp_auth_context = "SMD-Reconf";
+			else if (type == LINK_PARSE_REASSOC)
+				sp_auth_context = "Reassoc";
+			else
+				sp_auth_context = "Assoc";
 
 			resp = validate_security_profile_common(hapd, sta, true, elems,
-								type == LINK_PARSE_REASSOC ?
-								"Reassoc" : "Assoc", &matched_profile);
+								sp_auth_context, &matched_profile);
 			if (resp != WLAN_STATUS_SUCCESS)
 				goto out;
 			wpa_printf(MSG_DEBUG,
