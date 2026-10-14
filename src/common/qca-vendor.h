@@ -29640,6 +29640,11 @@ enum qca_wlan_vendor_crypto_test_mode {
  *	fragmented across multiple requests. When present, it indicates
  *	that there are more fragments to follow. Absence of this attribute
  *	marks the final fragment.
+ * @QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TOTAL_LEN: u32 attribute. Indicates the
+ *	total length of the crypto test payload.
+ * @QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_RADIO_INDEX: u8 attribute. Index of the
+ *	radio (within the wiphy) on which the crypto test is run. Optional
+ *	only when the wiphy has a single radio.
  */
 
 enum qca_wlan_vendor_attr_crypto_test {
@@ -29654,6 +29659,8 @@ enum qca_wlan_vendor_attr_crypto_test {
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_COOKIE   = 8,
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_FRAG_IDX = 9,
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MORE_BIT = 10,
+	QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TOTAL_LEN = 11,
+	QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_RADIO_INDEX = 12,
 
         /* keep last */
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AFTER_LAST,
