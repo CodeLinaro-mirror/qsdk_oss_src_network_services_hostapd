@@ -775,14 +775,16 @@ static u16 validate_security_profile_common(
 		return WLAN_STATUS_SUCCESS;
 
 	if (!elems->security_profile) {
-		/* If AP supports Security Profiles, STA MUST include SP IE during PASN auth */
+		/* SP IE is mandatory during PASN auth, and during (Re)Assoc */
 		if (hapd->conf->security_profiles &&
-		    os_strcmp(auth_context, "PASN") == 0) {
+		    (os_strcmp(auth_context, "PASN") == 0 ||
+		     os_strcmp(auth_context, "Assoc") == 0 ||
+		     os_strcmp(auth_context, "Reassoc") == 0)) {
 			wpa_printf(MSG_INFO,
 				   "UHR: Rejecting %s auth from " MACSTR
 				   " - Security Profile element missing (AP requires it)",
 				   auth_context, MAC2STR(sta->addr));
-			return WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+			return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
 		}
 		/* For SAE/other auth or no security_profiles configured - SP IE not required */
 		return WLAN_STATUS_SUCCESS;
@@ -7483,10 +7485,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			resp = validate_security_profile_common(hapd, sta, true, elems,
 								type == LINK_PARSE_REASSOC ?
 								"Reassoc" : "Assoc", &matched_profile);
-			if (resp != WLAN_STATUS_SUCCESS) {
-				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+			if (resp != WLAN_STATUS_SUCCESS)
 				goto out;
-			}
 			wpa_printf(MSG_DEBUG,
 				   "UHR: (Re)Assoc Security Profile validated "
 				   "for " MACSTR, MAC2STR(sta->addr));
