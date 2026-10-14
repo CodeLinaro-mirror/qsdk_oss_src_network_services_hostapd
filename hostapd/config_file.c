@@ -562,6 +562,19 @@ static int hostapd_radius_dns_resolution(struct hostapd_radius_server *nserv,
 	}
 
 	wpa_printf(MSG_DEBUG, "RADIUS: Resolved %s to %s", val, ip);
+#ifdef CONFIG_RADIUS_TLS
+	/*
+	 * Store the hostname of the RADIUS server. This is used by
+	 * the Authenticator during the TLS handshake to validate the
+	 * hostname against the SubjectAltName extension in the RADIUS
+	 * server certificate.
+	 */
+	nserv->hostname = os_strdup(val);
+	if (!nserv->hostname) {
+		freeaddrinfo(res);
+		return -1;
+	}
+#endif /* CONFIG_RADIUS_TLS */
 
 	freeaddrinfo(res);
 
