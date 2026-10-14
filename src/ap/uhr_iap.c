@@ -86,6 +86,8 @@ static int uhr_extract_security_ctx(struct hostapd_data *hapd,
 	WPA_PUT_BE32(sec_ctx->akm, sm->wpa_key_mgmt);
 	WPA_PUT_BE32(sec_ctx->cipher, sm->pairwise);
 
+	sec_ctx->auth_alg = sta->auth_alg;
+
 	if (sm->wpa_ie) {
 		os_memcpy(sec_ctx->wpa_ie, sm->wpa_ie, sm->wpa_ie_len);
 		sec_ctx->wpa_ie_len = sm->wpa_ie_len;

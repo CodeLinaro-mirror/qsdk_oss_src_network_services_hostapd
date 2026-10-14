@@ -2413,6 +2413,7 @@ static int uhr_process_reconf_req_list(
         struct hostapd_data *hapd,
         const u8 *sta_addr,
         const u8 *current_ap_mld_addr,
+        const struct uhr_iap_security_ctx *sec_ctx,
         struct uhr_link_reconf_req_list *req_list,
         bool *assoc_link_found,
         u8 *assoc_link_id,
@@ -2476,6 +2477,16 @@ static int uhr_process_reconf_req_list(
                         os_memcpy(sta->mld_info.links[info->link_id].local_addr,
                                   info->local_addr, ETH_ALEN);
                         sta->mld_info.links[info->link_id].valid = true;
+
+                        sta->auth_alg = sec_ctx->auth_alg;
+#ifdef CONFIG_ENC_ASSOC
+                        if (sta->auth_alg == WLAN_AUTH_EPPKE ||
+                            sta->auth_alg == WLAN_AUTH_802_1X) {
+                                wpa_printf(MSG_DEBUG,
+                                           "SMD ST Prep Target AP: Mark the station as an EPP peer");
+                                sta->epp_sta = true;
+                        }
+#endif /* CONFIG_ENC_ASSOC */
 
                         info->status = check_assoc_ies(
                                 hapd_link, sta,
@@ -2713,7 +2724,7 @@ static int uhr_tgt_ap_parse_ml(
 		goto out;
 
 	if (uhr_process_reconf_req_list(hapd, sta_addr, current_ap_mld_addr,
-				req_list, &assoc_link_found,
+				sec_ctx, req_list, &assoc_link_found,
 				&assoc_link_id, &assoc_hapd, &assoc_sta) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "SMD ST PREP Target AP: No valid assoc link found");
