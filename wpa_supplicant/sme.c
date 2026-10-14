@@ -757,7 +757,6 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 			   "EPPKE: Cannot use EPPKE without support for association frame encryption");
 		goto fail;
 	}
-
 	capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
 	capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
 #ifdef CONFIG_PMKSA_PRIVACY
@@ -1059,6 +1058,26 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"Prefer EPPKE over SAE when both are enabled");
 			params.auth_alg = WPA_AUTH_ALG_EPPKE;
+		} else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_EPPKE) &&
+			   (ssid->key_mgmt & WPA_KEY_MGMT_EPPKE) &&
+			   wpa_key_mgmt_sae_ext_key(ssid->key_mgmt) &&
+			   !wpas_is_sae_avoided(wpa_s, ssid, &ied) &&
+			   wpas_eppke_ap_capable(wpa_s, bss) &&
+			   wpas_security_profile_active(wpa_s)) {
+			const u8 *sp = wpa_bss_get_ie_ext(
+				bss, WLAN_EID_EXT_SECURITY_PROFILE);
+			int sp_km = security_profile_ie_get_key_mgmt(
+				sp, ssid->key_mgmt);
+
+			if (sp_km & WPA_KEY_MGMT_EPPKE) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"Prefer EPPKE over SAE via Security Profile IE");
+				params.auth_alg = WPA_AUTH_ALG_EPPKE;
+			} else if (wpa_key_mgmt_sae(sp_km)) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"Using SAE auth_alg via Security Profile IE");
+				params.auth_alg = WPA_AUTH_ALG_SAE;
+			}
 #endif /* CONFIG_ENC_ASSOC */
 		} else if (wpa_key_mgmt_sae(ied.key_mgmt)) {
 			if (wpas_is_sae_avoided(wpa_s, ssid, &ied)) {
@@ -1422,6 +1441,26 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 
 			resp = wpas_pasn_build_auth_1(&wpa_s->pasn, NULL,
 						      false, 0);
+
+            if (resp && wpa_s->security_profile_ie_len > 0 &&
+                wpa_s->pasn.auth1) {
+                struct wpabuf *new_auth1;
+
+                wpa_hexdump(MSG_DEBUG,
+                        "PASN: Appending Security Profile IE to auth1",
+                        wpa_s->security_profile_ie,
+                        wpa_s->security_profile_ie_len);
+                new_auth1 = wpabuf_alloc(wpabuf_len(wpa_s->pasn.auth1) +
+                             wpa_s->security_profile_ie_len);
+                if (new_auth1) {
+                    wpabuf_put_buf(new_auth1, wpa_s->pasn.auth1);
+                    wpabuf_put_data(new_auth1, wpa_s->security_profile_ie,
+                    wpa_s->security_profile_ie_len);
+                    wpabuf_free(wpa_s->pasn.auth1);
+                    wpa_s->pasn.auth1 = new_auth1;
+                }
+            }
+
 		} else {
 			resp = wpas_pasn_build_auth_3(&wpa_s->pasn, 0);
 		}
