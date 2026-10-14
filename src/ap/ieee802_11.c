@@ -1308,7 +1308,12 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	os_free(buf);
 
 #ifdef CONFIG_QCN_EXTN
-	if (resp != WLAN_STATUS_SUCCESS && sta) {
+	if (resp != WLAN_STATUS_SUCCESS && sta &&
+	    !(auth_alg == WLAN_AUTH_SAE &&
+	      auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT &&
+	      (resp == WLAN_STATUS_ANTI_CLOGGING_TOKEN_REQ ||
+	       resp == WLAN_STATUS_SAE_HASH_TO_ELEMENT ||
+	       resp == WLAN_STATUS_SAE_PK))) {
 		wpa_printf(MSG_DEBUG, "auth_reject: STA " MACSTR " status=%u",
 			   MAC2STR(sta->addr), resp);
 		hostapd_log_trigger_emit(hapd, sta->addr,
