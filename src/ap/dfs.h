@@ -134,7 +134,7 @@ int hostapd_is_dfs_chan_available(struct hostapd_iface *iface);
 int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface);
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
-			  int cf1, int cf2, bool is_background,
+			  int cf1, int cf2, u16 radar_bitmap, bool is_background,
 			  int chan_width_device, int cf_device);
 int hostapd_handle_dfs_offload(struct hostapd_iface *iface);
 int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,

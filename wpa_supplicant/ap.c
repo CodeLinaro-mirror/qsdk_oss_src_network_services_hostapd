@@ -2356,7 +2356,7 @@ void wpas_ap_event_dfs_cac_started(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_start_cac(iface, radar->freq,
 			      radar->ht_enabled, radar->chan_offset,
 			      radar->chan_width, radar->cf1, radar->cf2,
-			      radar->is_background,
+			      radar->radar_bitmap, radar->is_background,
 			      radar->chan_width_device, radar->cf_device);
 }
 
