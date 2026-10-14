@@ -1815,6 +1815,14 @@ int hostapd_set_dfs_cac_time(struct hostapd_iface *iface)
 	/* Setup CAC time */
 	if (iface->mcst && iface->cs_time) {
 		iface->dfs_cac_ms = iface->cs_time;
+	} else if (iface->conf->conf_extn.repeater &&
+		   !iface->conf->conf_extn.ind_rptr &&
+		   iface->conf->conf_extn.skip_cac &&
+		   iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) {
+		/* Dependent repeater default bring-up keeps the legacy skip-CAC
+		 * duration. CAC after CSA and explicit MCST/cs_time contexts are
+		 * handled by the other paths. */
+		iface->dfs_cac_ms = 0;
 	} else {
 #endif
 		iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
