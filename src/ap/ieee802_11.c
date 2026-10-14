@@ -775,7 +775,16 @@ static u16 validate_security_profile_common(
 		return WLAN_STATUS_SUCCESS;
 
 	if (!elems->security_profile) {
-		/* No Security Profile element present - validation not needed */
+		/* If AP supports Security Profiles, STA MUST include SP IE during PASN auth */
+		if (hapd->conf->security_profiles &&
+		    os_strcmp(auth_context, "PASN") == 0) {
+			wpa_printf(MSG_INFO,
+				   "UHR: Rejecting %s auth from " MACSTR
+				   " - Security Profile element missing (AP requires it)",
+				   auth_context, MAC2STR(sta->addr));
+			return WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+		}
+		/* For SAE/other auth or no security_profiles configured - SP IE not required */
 		return WLAN_STATUS_SUCCESS;
 	}
 
@@ -9954,11 +9963,22 @@ rsnxe_done:
 
 	if (hapd->conf->security_profiles) {
 		u8 *sec_prof_start = p;
-		p = hostapd_eid_security_profile(hapd, p);
-		send_len += (p - sec_prof_start);
-		wpa_printf(MSG_ERROR,
-			   "UHR: Added Security Profile IE to Association Response (len=%zu)",
-			   (size_t)(p - sec_prof_start));
+
+		if (hapd->conf->security_profile_alt_behavior == 2) {
+			/* Alt behavior: include only profile 9 in assoc response */
+			p = hostapd_eid_security_profile_override(hapd, p, 9);
+		} else {
+			/* Default or alt_behavior==1: include all configured profiles */
+			p = hostapd_eid_security_profile(hapd, p);
+		}
+
+		if (p > sec_prof_start) {
+			send_len += (p - sec_prof_start);
+			wpa_printf(MSG_ERROR,
+				   "UHR: Added Security Profile IE to Association Response (len=%zu, alt_behavior=%d)",
+				   (size_t)(p - sec_prof_start),
+				   hapd->conf->security_profile_alt_behavior);
+		}
 	}
 
 

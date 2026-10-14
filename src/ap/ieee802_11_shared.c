@@ -1845,6 +1845,81 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	return pos;
 }
 
+
+/*
+ * hostapd_eid_security_profile_override - Build SP IE with a single profile ID
+ *
+ * Builds a Security Profile element with only the specified profile_id.
+ * Used for alt_behavior testing where only one profile should be included.
+ */
+u8 * hostapd_eid_security_profile_override(struct hostapd_data *hapd, u8 *eid,
+					   int profile_id)
+{
+	u8 *pos = eid;
+	u8 *len_pos;
+	u8 reduced_rsn_capab = 0;
+	u8 ext_rsn_capab[256];
+	size_t ext_rsn_capab_len = 0;
+	u8 bitmap[16]; /* max 128 profiles */
+	size_t bitmap_len = 0;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
+
+	if (!hapd || !eid || profile_id < 0 || profile_id > 127)
+		return eid;
+
+	wpa_printf(MSG_ERROR,
+		   "UHR: Building SP IE with override profile_id=%d",
+		   profile_id);
+
+	/* Build bitmap with only the specified profile */
+	bitmap_len = (profile_id / 8) + 1;
+	if (bitmap_len > sizeof(bitmap))
+		bitmap_len = sizeof(bitmap);
+	os_memset(bitmap, 0, bitmap_len);
+	bitmap[profile_id / 8] |= BIT(profile_id % 8);
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
+	if (rsnxe_end > rsnxe_buf + 2) {
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
+			ext_rsn_capab_len = sizeof(ext_rsn_capab);
+		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
+	}
+
+	/* If the override profile mandates SAE-H2E, force the H2E bit */
+	if (profile_id == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_FT_SAE) {
+		if (ext_rsn_capab_len < 1) {
+			ext_rsn_capab_len = 1;
+			ext_rsn_capab[0] = 0;
+		}
+		ext_rsn_capab[0] |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+	}
+
+	if (hapd->conf->security_profile_ext_key_id)
+		reduced_rsn_capab |= SEC_PROF_REDUCED_RSN_CAPA_EXT_KEY_ID;
+	if (hapd->conf->security_profile_ocvc)
+		reduced_rsn_capab |= SEC_PROF_REDUCED_RSN_CAPA_OCVC;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	len_pos = pos++;
+	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
+	*pos++ = reduced_rsn_capab;
+	*pos++ = (u8) bitmap_len; /* number of octets in bitmap */
+	os_memcpy(pos, bitmap, bitmap_len);
+	pos += bitmap_len;
+	if (ext_rsn_capab_len > 0) {
+		os_memcpy(pos, ext_rsn_capab, ext_rsn_capab_len);
+		pos += ext_rsn_capab_len;
+	}
+	*len_pos = (u8) (pos - len_pos - 1);
+
+	return pos;
+}
+
 u16 check_ext_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		    const u8 *ext_capab_ie, size_t ext_capab_ie_len)
 {

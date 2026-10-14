@@ -3268,6 +3268,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->security_profile_ext_key_id = atoi(pos);
 	} else if (os_strcmp(buf, "security_profile_ocvc") == 0) {
 		bss->security_profile_ocvc = atoi(pos);
+	} else if (os_strcmp(buf, "security_profile_alt_behavior") == 0) {
+		bss->security_profile_alt_behavior = atoi(pos);
+		if (bss->security_profile_alt_behavior < -1 ||
+		    bss->security_profile_alt_behavior > 2) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid security_profile_alt_behavior value (must be -1, 1, or 2)",
+				   line);
+			return 1;
+		}
 #ifdef CONFIG_IEEE80211R_AP
 	} else if (os_strcmp(buf, "ft_iface") == 0) {
 		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));
