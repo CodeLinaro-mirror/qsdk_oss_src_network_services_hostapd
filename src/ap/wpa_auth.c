@@ -7166,13 +7166,19 @@ static int wpa_group_config_group_keys(struct wpa_authenticator *wpa_auth,
 			if (!group->bigtk_set || group->bigtk_configured)
 				return ret;
 		}
-		if (wpa_auth_set_key(wpa_auth, group->vlan_id, alg,
-				     broadcast_ether_addr, group->GN_bigtk,
-				     group->BIGTK[group->GN_bigtk - 6], len,
-				     KEY_FLAG_GROUP_TX_DEFAULT) < 0)
-			ret = -1;
-		else
-			group->bigtk_configured = true;
+#ifdef CONFIG_QCN_EXTN
+		if (!conf->skip_bigtk_install) {
+#endif /* CONFIG_QCN_EXTN */
+			if (wpa_auth_set_key(wpa_auth, group->vlan_id, alg,
+					     broadcast_ether_addr, group->GN_bigtk,
+					     group->BIGTK[group->GN_bigtk - 6], len,
+					     KEY_FLAG_GROUP_TX_DEFAULT) < 0)
+				ret = -1;
+			else
+				group->bigtk_configured = true;
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		if (ret || !conf->control_frame_prot)
 			return ret;
