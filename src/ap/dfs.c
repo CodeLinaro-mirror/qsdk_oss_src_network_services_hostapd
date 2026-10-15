@@ -4367,7 +4367,7 @@ static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
 		iface, channel->chan, channel->freq, secondary_channel,
 		oper_chwidth,
 		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
-		hostapd_get_punct_bitmap(iface->bss[0]));
+		0);
 	return true;
 }
 
