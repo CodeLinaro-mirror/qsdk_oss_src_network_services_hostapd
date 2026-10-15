@@ -927,7 +927,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	 *   2. AP is advertising the Security Profile element
 	 *   3. A matching profile number was selected
 	 */
-	if (wpas_security_profile_active(wpa_s) &&
+	if (ssid->security_profiles &&
 	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE) &&
 	    wpa_s->sel_security_profile &&
 	    wpa_s->security_profile_len > 0) {
@@ -1822,12 +1822,17 @@ no_fils:
 	 * IEs (params.ie / params.ie_len → NL80211_ATTR_IE) for auth
 	 * algorithms that use it:
 	 *
-	 *   WPA_AUTH_ALG_EPPKE  — EPPKE (AKM 29) authentication
 	 *   WPA_AUTH_ALG_802_1X — 802.1X-in-auth-frames (37.32, Table 9-bb14)
+	 *
+	 * EPPKE is excluded here: pasn_set_security_profile() already embeds
+	 * the Security Profile element directly into the Auth1 frame body
+	 * built by the PASN initiator. Including it again via params.ie would
+	 * append a second, duplicate copy at the driver layer, so the frame
+	 * actually sent over the air no longer matches pasn->auth1 that was
+	 * stored for the frame-3 MIC hash, causing MIC verification failures.
 	 */
 	if (wpa_s->security_profile_len > 0 && start &&
-	    (params.auth_alg == WPA_AUTH_ALG_EPPKE ||
-	     params.auth_alg == WPA_AUTH_ALG_802_1X)) {
+	    params.auth_alg == WPA_AUTH_ALG_802_1X) {
 		if (params.ie && params.ie_len > 0) {
 			size_t combined_len = params.ie_len +
 				wpa_s->security_profile_len;

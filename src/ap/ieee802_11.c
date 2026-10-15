@@ -7581,7 +7581,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 				   "UHR: (Re)Assoc Security Profile validated "
 				   "for " MACSTR, MAC2STR(sta->addr));
 
-			if (matched_profile->number != 0) {
+			if (matched_profile && matched_profile->number != 0) {
 				wpa_printf(MSG_ERROR," %d %s %d \n", matched_profile->number, __func__, __LINE__);
 				security_profile_matched = true;
 			}
