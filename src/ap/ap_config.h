@@ -416,6 +416,8 @@ struct eht_phy_capabilities_info {
 struct uhr_phy_capabilities_info {
 	int uhr_2xldpc_tx;
 	int uhr_2xldpc_rx;
+	int uhr_elr_tx;
+	int uhr_elr_rx;
 };
 #endif /* CONFIG_IEEE80211BN */
 
@@ -614,6 +616,8 @@ struct hostapd_bss_config {
 	struct uhr_phy_capabilities_info uhr_phy_capab;
 #define UHR_PHY_BSS_OVR_2XLDPC_TX   BIT(0)
 #define UHR_PHY_BSS_OVR_2XLDPC_RX   BIT(1)
+#define UHR_PHY_BSS_OVR_ELR_TX      BIT(2)
+#define UHR_PHY_BSS_OVR_ELR_RX      BIT(3)
 	u32 uhr_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BN */
 
