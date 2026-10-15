@@ -1442,6 +1442,29 @@ const u8 * wpa_bss_get_ie_pos(const struct wpa_bss *bss, u8 ie, u8 idx)
 }
 
 /**
+ * wpa_bss_get_ie_beacon_pos - Fetch a specified information element at given
+ * index from a BSS entry, preferring Beacon IEs
+ * @bss: BSS table entry
+ * @ie: Information element identifier (WLAN_EID_*)
+ * @idx: index of entry of element to be found.
+ *
+ * Fall back to the primary IE buffer if Beacon IEs are not available.
+ *
+ * This function returns the @idx'th matching information element or NULL.
+ */
+const u8 * wpa_bss_get_ie_beacon_pos(const struct wpa_bss *bss, u8 ie, u8 idx)
+{
+	const u8 *ies;
+
+	if (!bss->beacon_ie_len)
+		return wpa_bss_get_ie_pos(bss, ie, idx);
+
+	ies = wpa_bss_ie_ptr(bss) + bss->ie_len;
+
+	return get_ie_pos(ies, bss->beacon_ie_len, ie, idx);
+}
+
+/**
  * wpa_bss_get_mbssid_idx - Fetch a mbssid idx of a BSS entry
  * @bss: BSS table entry
  *
