@@ -382,7 +382,10 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	/* Propagate external M3 trigger policy to authenticator */
 	wconf->externally_triggered_m3 = conf->externally_triggered_m3;
 
-	wconf->rsn_override_omit_rsnxe = conf->rsn_override_omit_rsnxe;
+	/* no_beacon_rsnxe also implies omitting RSNXE from EAPOL-Key
+	 * message 3, so a single test knob omits RSNXE everywhere. */
+	wconf->rsn_override_omit_rsnxe = conf->rsn_override_omit_rsnxe ||
+		conf->no_beacon_rsnxe;
 	wconf->rsn_override_mlo_compat = conf->rsn_override_mlo_compat;
 	wconf->spp_amsdu = conf->spp_amsdu &&
 		(iface->drv_flags2 & WPA_DRIVER_FLAGS2_SPP_AMSDU);
