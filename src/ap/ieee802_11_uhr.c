@@ -2516,6 +2516,18 @@ static int uhr_process_reconf_req_list(
                         if (sta->wpa_sm && sta->smd_info.smd_sta) {
                                 wpa_auth_set_smd_info(sta->wpa_sm, sta);
                         }
+
+                        if (ap_sta_is_epp(sta)) {
+                                /* EPPKE/802.1X STAs need the PTK on the
+                                 * assoc link before any partner-link
+                                 * ADD_LINK_STA, which the driver otherwise
+                                 * rejects with -ENOENT. */
+                                if (uhr_finalize_assoc_and_keys(hapd_link,
+                                                                sta->addr,
+                                                                sec_ctx,
+                                                                req_list) < 0)
+                                        return -1;
+                        }
                 } else {
                         info->is_assoc_link = false;
 
@@ -2731,7 +2743,8 @@ static int uhr_tgt_ap_parse_ml(
 		goto out;
 	uhr_tgt_st_prep_finalize_ml(assoc_hapd, assoc_sta);
 
-        if (uhr_finalize_assoc_and_keys(assoc_hapd, sta_addr,
+        if (!ap_sta_is_epp(assoc_sta) &&
+            uhr_finalize_assoc_and_keys(assoc_hapd, sta_addr,
                                         sec_ctx, req_list) < 0)
                 goto out;
 
