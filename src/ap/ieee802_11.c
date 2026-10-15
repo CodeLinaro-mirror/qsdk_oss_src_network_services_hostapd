@@ -4880,7 +4880,10 @@ static void hapd_initialize_pasn(struct hostapd_data *hapd,
 #endif /* CONFIG_SAE */
 	pasn_set_rsne(pasn, wpa_auth_get_wpa_ie(hapd->wpa_auth,
 						&pasn->rsn_ie_len));
-	pasn_set_rsnxe_ie(pasn, hostapd_wpa_ie(hapd, WLAN_EID_RSNX));
+#ifdef CONFIG_TESTING_OPTIONS
+	if (!hapd->conf->no_beacon_rsnxe)
+#endif /* CONFIG_TESTING_OPTIONS */
+		pasn_set_rsnxe_ie(pasn, hostapd_wpa_ie(hapd, WLAN_EID_RSNX));
 	pasn->disable_pmksa_caching = hapd->conf->disable_pmksa_caching;
 #ifdef CONFIG_ENC_ASSOC
 	pasn->tk_configured = false;
