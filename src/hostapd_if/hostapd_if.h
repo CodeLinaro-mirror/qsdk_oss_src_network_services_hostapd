@@ -207,6 +207,8 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta);
 
 struct hostapd_data *__hostapd_get_link_iface(const char *ifname, int link_id);
 
+void hostapd_if_set_logging(bool enable);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
@@ -331,6 +333,7 @@ hostapd_if_assoc_resp_tail_len(struct sta_info *sta)
 static inline void
 hostapd_if_sae_clear_plugin_wait(struct hostapd_data *hapd,
 				 struct sta_info *sta) {}
+static inline void hostapd_if_set_logging(bool enable) {}
 #endif /* CONFIG_QCN_EXTN */
 
 #endif /* HOSTAPD_IF_H */

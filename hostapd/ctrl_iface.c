@@ -101,6 +101,8 @@
 #endif
 #endif
 
+#include "hostapd_if/hostapd_if.h"
+
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
 
 #ifdef CONFIG_CTRL_IFACE_UDP
@@ -12053,6 +12055,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		reply_len = hostapd_ctrl_iface_configure_plugin(hapd, buf + 17,
 							       reply, reply_size);
 #endif
+#ifdef CONFIG_HOSTAPD_IF
+	} else if (os_strcmp(buf, "enable_hostapd_if_logging") == 0) {
+		hostapd_if_set_logging(true);
+	} else if (os_strcmp(buf, "disable_hostapd_if_logging") == 0) {
+		hostapd_if_set_logging(false);
+#endif /* CONFIG_HOSTAPD_IF */
 #ifdef CONFIG_TAXONOMY
 	} else if (os_strncmp(buf, "SIGNATURE ", 10) == 0) {
 		reply_len = hostapd_ctrl_iface_signature(hapd, buf + 10,
