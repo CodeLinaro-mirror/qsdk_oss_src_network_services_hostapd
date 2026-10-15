@@ -4289,8 +4289,7 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	/* Verify RSN Selection element for RSN overriding */
 	if ((wpa_auth->conf.rsn_override_key_mgmt ||
 	     wpa_auth->conf.rsn_override_key_mgmt_2) &&
-	    ((rsn_is_snonce_cookie(sm->SNonce) && !kde.rsn_selection) ||
-	     (!rsn_is_snonce_cookie(sm->SNonce) && kde.rsn_selection) ||
+	    ((!rsn_is_snonce_cookie(sm->SNonce) && kde.rsn_selection) ||
 	     (sm->rsn_selection && !kde.rsn_selection) ||
 	     (!sm->rsn_selection && kde.rsn_selection) ||
 	     (sm->rsn_selection && kde.rsn_selection &&
