@@ -3262,6 +3262,15 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			wpabuf_put_u8(data, 1 + WPA_NONCE_LEN);
 			wpabuf_put_u8(data, WLAN_EID_EXT_NONCE);
 			wpabuf_put_data(data, a_nonce, WPA_NONCE_LEN);
+
+			/* Per IEEE 802.11bi/D4.0, 12.16.5 (IEEE 802.1X
+			 * authentication utilizing Authentication frames),
+			 * the last Authentication frame includes a
+			 * Supported Groups element that includes all finite
+			 * cyclic groups supported by the responder.
+			 */
+			wpa_pasn_add_own_supported_groups(data,
+							  hapd->conf->pasn_groups);
 		} else {
 			/* Per IEEE 802.11bi/D4.0, 12.16.5 (IEEE 802.1X
 			 * authentication utilizing Authentication frames), the
