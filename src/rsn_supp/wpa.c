@@ -6581,7 +6581,8 @@ void wpa_sm_set_rx_replay_ctr(struct wpa_sm *sm, const u8 *rx_replay_counter)
 
 void wpa_sm_set_ptk_kck_kek(struct wpa_sm *sm, enum rsn_hash_alg hash,
 			    const u8 *ptk_kck, size_t ptk_kck_len,
-			    const u8 *ptk_kek, size_t ptk_kek_len)
+			    const u8 *ptk_kek, size_t ptk_kek_len,
+			    const u8 *ptk_tk, size_t ptk_tk_len)
 {
 	if (ptk_kck && ptk_kck_len <= WPA_KCK_MAX_LEN) {
 		os_memcpy(sm->ptk.kck, ptk_kck, ptk_kck_len);
@@ -6592,6 +6593,11 @@ void wpa_sm_set_ptk_kck_kek(struct wpa_sm *sm, enum rsn_hash_alg hash,
 		os_memcpy(sm->ptk.kek, ptk_kek, ptk_kek_len);
 		sm->ptk.kek_len = ptk_kek_len;
 		wpa_printf(MSG_DEBUG, "Updated PTK KEK");
+	}
+	if (ptk_tk && ptk_tk_len <= WPA_TK_MAX_LEN) {
+		os_memcpy(sm->ptk.tk, ptk_tk, ptk_tk_len);
+		sm->ptk.tk_len = ptk_tk_len;
+		wpa_printf(MSG_DEBUG, "Updated PTK TK");
 	}
 	sm->ptk.hash_alg = hash;
 	if (sm->hash_alg != hash) {
