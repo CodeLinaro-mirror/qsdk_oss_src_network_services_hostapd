@@ -2047,7 +2047,6 @@ static int wpa_supplicant_connect_ml_missing(struct wpa_supplicant *wpa_s,
 {
 	int *freqs;
 	u16 missing_links = 0, removed_links, usable_links;
-	u8 link_id, n;
 
 	if (!((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_MLO) &&
 	      (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)))
@@ -2068,45 +2067,15 @@ static int wpa_supplicant_connect_ml_missing(struct wpa_supplicant *wpa_s,
 		"MLD: Doing an ML probe for missing links 0x%04x",
 		missing_links);
 
-	freqs = os_malloc(sizeof(int) * (MAX_NUM_MLD_LINKS + 2));
+	freqs = os_malloc(sizeof(int) * 2);
 	if (!freqs)
 		return 0;
 
-	/*
-	 * Scan every missing link's own channel (as advertised in the MLD
-	 * element/RNR), not just the already-connected selected link's
-	 * channel. A probe response received only on the selected link's
-	 * channel cannot create a local wpa_bss entry for a partner link on
-	 * a different channel (e.g. a 6 GHz link), so
-	 * wpa_bss_get_usable_links() would otherwise keep reporting that
-	 * link as missing indefinitely.
-	 */
-	n = 0;
-	freqs[n++] = selected->freq;
-	for_each_link(missing_links, link_id) {
-		int freq = selected->mld_links[link_id].freq;
-		u8 j, dup = 0;
-
-		/* Leave room for the freqs[n] = 0 terminator below. */
-		if (n >= MAX_NUM_MLD_LINKS + 1)
-			break;
-
-		if (!freq)
-			continue;
-
-		for (j = 0; j < n; j++) {
-			if (freqs[j] == freq) {
-				dup = 1;
-				break;
-			}
-		}
-		if (!dup)
-			freqs[n++] = freq;
-	}
-	freqs[n] = 0;
-
 	wpa_s->ml_connect_probe_ssid = ssid;
 	wpa_s->ml_connect_probe_bss = selected;
+
+	freqs[0] = selected->freq;
+	freqs[1] = 0;
 
 	wpa_s->manual_scan_passive = 0;
 	wpa_s->manual_scan_use_id = 0;
