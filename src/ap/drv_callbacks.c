@@ -1519,6 +1519,14 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 				hostapd_enable_pending_bss(hapd->iface, REENABLE_CSA,
 							   false);
 			}
+
+			if (hapd->iface->state != HAPD_IFACE_ENABLED &&
+			    !hapd->iface->cac_started) {
+				hostapd_set_state(hapd->iface, HAPD_IFACE_ENABLED);
+				wpa_msg(hapd->iface->bss[0]->msg_ctx, MSG_INFO,
+					AP_EVENT_ENABLED);
+			}
+
 		}
 #ifdef CONFIG_QCN_EXTN
 		if (hapd->iconf->conf_extn.ind_rptr &&

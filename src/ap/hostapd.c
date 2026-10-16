@@ -8243,6 +8243,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 
 	if (hapd_iface->cac_started) {
 		hapd->reenable = REENABLE_CAC;
+		hostapd_refresh_other_iface_beacons(hapd_iface);
 		wpa_printf(MSG_INFO, "CAC in progress, cannot enable BSS");
 		return 0;
 	}
