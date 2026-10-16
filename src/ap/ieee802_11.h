@@ -590,9 +590,9 @@ size_t hostapd_eid_tx_power_indication_len(void);
 size_t hostapd_security_profile_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
-				   bool skip_post_phase, bool from_user);
+				   bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
-					 bool no_post_phase, bool from_user);
+					 bool from_user);
 int hostapd_npca_primary_chan_validate(struct hostapd_data *hapd,
 				       const char *val_str);
 u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
