@@ -2480,6 +2480,15 @@ static int dfs_chan_get_cen_freq(int pri_chan, int bw_mhz)
 	u8 seg0;
 	int sec;
 
+#ifdef CONFIG_QCN_EXTN
+	if (bw_mhz == CHWIDTH_320) {
+		if (dfs_compute_chan_params_320mhz(pri_chan, &oper_width,
+						   &seg0, &sec) < 0)
+			return 0;
+		return DFS_SEG_IDX_TO_FREQ(seg0);
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (dfs_compute_chan_params(pri_chan, bw_mhz, &oper_width, &seg0, &sec) < 0)
 		return 0;
 	return DFS_SEG_IDX_TO_FREQ(seg0);
@@ -2501,7 +2510,20 @@ static bool dfs_chan_recovery_trigger_csa_to_target(struct hostapd_iface *iface,
 	enum oper_chan_width oper_width;
 	u8 seg0;
 	int sec;
+	u16 punct_bitmap = 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (tgt_bw_mhz == CHWIDTH_320) {
+		if (dfs_compute_chan_params_320mhz(tgt_chan, &oper_width,
+						   &seg0, &sec) < 0) {
+			wpa_printf(MSG_WARNING,
+				   "DFS: chan recovery: CSA params (320 MHz) failed for chan=%d",
+				   tgt_chan);
+			return false;
+		}
+		punct_bitmap = RIGHT80_240MHZ_PUNC;
+	} else
+#endif /* CONFIG_QCN_EXTN */
 	if (dfs_compute_chan_params(tgt_chan, tgt_bw_mhz,
 				    &oper_width, &seg0, &sec) < 0) {
 		wpa_printf(MSG_WARNING,
@@ -2516,7 +2538,7 @@ static bool dfs_chan_recovery_trigger_csa_to_target(struct hostapd_iface *iface,
 
 	if (hostapd_dfs_request_channel_switch(iface, tgt_chan,
 					       GET_FREQ_CHAN_5G(tgt_chan), sec,
-					       oper_width, seg0, 0, 0) != 0) {
+					       oper_width, seg0, 0, punct_bitmap) != 0) {
 		wpa_printf(MSG_WARNING, "DFS: chan recovery: CSA to chan=%d failed",
 			   tgt_chan);
 		return false;
@@ -2558,7 +2580,7 @@ static void dfs_check_target_chan_for_switch(struct hostapd_iface *iface)
 		return;
 
 	tgt_start = DFS_BLOCK_FIRST_FREQ(tgt_cen_freq, cfg_bw_mhz);
-	n_chans = cfg_bw_mhz / DFS_SUBCHAN_STEP_MHZ;
+	n_chans = dfs_get_num_chans(cfg_bw_mhz);
 
 	first_chan_idx = hostapd_get_channel_idx(mode, DFS_FREQ_TO_CHAN(tgt_start));
 	if (first_chan_idx < 0)
@@ -5427,7 +5449,7 @@ static bool dfs_check_radar_flag_chan(struct hostapd_hw_modes *mode,
 static bool rcac_block_has_nol(struct hostapd_hw_modes *mode,
 			       int base_freq, int bw_mhz, int primary_chan)
 {
-	int n_sub = bw_mhz / 20;
+	int n_sub = dfs_get_num_chans(bw_mhz);
 	int s;
 
 	for (s = 0; s < n_sub; s++) {
