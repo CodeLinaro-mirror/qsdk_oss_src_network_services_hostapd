@@ -4751,8 +4751,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		/* TODO: check this. hostapd_get_hw_features() initializes
 		 * too much stuff. */
 		/* hostapd_get_hw_features(hapd->iface); */
-		hostapd_channel_list_updated(
-			hapd->iface, data->channel_list_changed.initiator);
+		hostapd_channel_list_updated(hapd->iface, &data->channel_list_changed);
 		break;
 	case EVENT_DFS_CAC_STARTED:
 		if (!data)
