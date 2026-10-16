@@ -6410,6 +6410,14 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	if (hostapd_validate_mld_uhr_cu_state(hapd) < 0)
 		return -1;
 
+	if (hapd->iconf->mbssid != MBSSID_DISABLED &&
+	    hapd != hostapd_mbssid_get_tx_bss(hapd)) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: not allowed on nontransmitted BSSID %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+
 	pos = cmd;
 
 	while (*pos) {
