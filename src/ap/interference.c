@@ -310,12 +310,14 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
+#ifdef CONFIG_ACS
 		if (hostapd_acs_is_chan_blocked(iface, chan->chan)) {
 			wpa_printf(MSG_DEBUG,
 					"AWGN: channel %d (%d) is in block list, skipping",
 					chan->freq, chan->chan);
 			continue;
 		}
+#endif /* CONFIG_ACS */
 
 		if (!hostapd_is_chan_in_primary_list(iface, chan->freq)) {
 			wpa_printf(MSG_DEBUG,

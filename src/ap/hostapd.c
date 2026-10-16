@@ -5365,10 +5365,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_MESH */
 
-#ifdef CONFIG_IEEE80211BN
+#if defined(CONFIG_IEEE80211BN) && defined(CONFIG_ACS)
 		if (iface->conf->npca_enable)
 			hostapd_npca_auto_select(iface);
-#endif /* CONFIG_IEEE80211BN */
+#endif /* CONFIG_IEEE80211BN && CONFIG_ACS */
 
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;

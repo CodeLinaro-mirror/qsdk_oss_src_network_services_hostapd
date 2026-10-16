@@ -346,7 +346,7 @@ static int ieee80211n_check_40mhz_2g4(struct hostapd_iface *iface,
 static int
 hostapd_setup_interface_complete_or_defer(struct hostapd_iface *iface, int err)
 {
-#ifdef CONFIG_IEEE80211BE
+#if defined(CONFIG_IEEE80211BE) && defined(CONFIG_ACS)
 	if (!err && iface->bss[0]->conf->mld_ap && iface->interfaces &&
 	    (iface->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN)) {
 		unsigned int i;
@@ -396,7 +396,7 @@ hostapd_setup_interface_complete_or_defer(struct hostapd_iface *iface, int err)
 			hostapd_setup_interface_complete(h, 0);
 		}
 	}
-#endif /* CONFIG_IEEE80211BE */
+#endif /* CONFIG_IEEE80211BE && CONFIG_ACS */
 	return hostapd_setup_interface_complete(iface, err);
 }
 
