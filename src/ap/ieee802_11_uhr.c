@@ -2838,6 +2838,12 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	size_t mle_len = 0;
 	struct uhr_link_reconf_req_info *info;
 
+	if (!hapd) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: NULL hapd in response build");
+		return NULL;
+	}
+
 	sta = ap_get_sta(hapd, sta_addr);
 
 	len = IEEE80211_HDRLEN + 1 + 1 + 1 + 1 + 2;  /* Header + Category + Action + Token + Type + Status Code */
@@ -3388,11 +3394,21 @@ send_response:
 	if (assoc_sta && status_code != 0)
 		assoc_sta->smd_info.tap_stats.tap_prep_fail++;
 
-	response_frame = uhr_tgt_ap_st_prep_resp(assoc_hapd, iap->sta_addr,
-					     dialog_token,
-					     status_code,
-					     req_list,
-					     &response_len);
+	if (assoc_hapd) {
+			response_frame = uhr_tgt_ap_st_prep_resp(assoc_hapd, iap->sta_addr,
+							     dialog_token,
+							     status_code,
+							     req_list,
+							     &response_len);
+	}
+	/*
+	 * If assoc_hapd is NULL, uhr_tgt_ap_parse_ml bailed before resolving
+	 * the target BSS; response_frame/response_len stay at their entry
+	 * values (NULL/0) and the outer uhr_iap_send_st_prep_resp below still
+	 * reports UHR_IAP_STATUS_FAILURE to the current AP using the valid
+	 * incoming hapd. Every goto send_response above already set a
+	 * non-zero status_code, so no extra fixup is needed here.
+	 */
 	
 	/* Send IAP RESPONSE */
 	ret = uhr_iap_send_st_prep_resp(hapd, iap->current_ap_mld_addr,
