@@ -2725,6 +2725,7 @@ static void hostapd_sync_mbssid_cmn_params(struct hostapd_data *hapd)
 int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 {
 	struct hostapd_bss_config *conf = hapd->conf;
+	struct hostapd_data *h_hapd = NULL;
 	u8 ssid[SSID_MAX_LEN + 1];
 	int ssid_len, set_ssid;
 	char force_ifname[IFNAMSIZ];
@@ -2800,8 +2801,6 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 
 #ifdef CONFIG_IEEE80211BE
 		if (conf->mld_ap) {
-			struct hostapd_data *h_hapd;
-
 			h_hapd = hostapd_mld_get_first_bss(hapd);
 			if (h_hapd) {
 				hapd->drv_priv = h_hapd->drv_priv;
@@ -2897,11 +2896,11 @@ setup_mld:
 #ifdef CONFIG_QCN_EXTN
 			hostapd_free_bss_index_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
-			/* For non first link the drv_priv is already assigned from
-			 * hhapd, hence, we have to reset in failure.
-			 */
-			hapd->interface_added = 0;
-			hapd->drv_priv = NULL;
+			/* drv_priv was inherited, unset it on failure */
+			if (h_hapd) {
+				hapd->interface_added = 0;
+				hapd->drv_priv = NULL;
+			}
 			return -1;
 		}
 
