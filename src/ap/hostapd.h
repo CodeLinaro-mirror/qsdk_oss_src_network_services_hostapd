@@ -929,7 +929,12 @@ struct hostapd_iface {
 	void *owner;
 	char *config_fname;
 	struct hostapd_config *conf;
-	char phy[16]; /* Name of the PHY (radio) */
+	char phy[24]; /* Name of the PHY (radio) */
+	/* Logical radio identifier. For multi-radio devices sharing the same
+	 * PHY name, radio_idx is appended to distinguish individual radios.
+	 * For other devices, this is identical to the PHY name.
+	 */
+	char phy_id[24];
 
 	enum hostapd_iface_state {
 		HAPD_IFACE_UNINITIALIZED,
