@@ -3825,6 +3825,7 @@ static void hostapd_event_color_change(struct hostapd_data *hapd, bool success)
 static void hostapd_iface_enable(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
+	bool restart_cac = false;
 	int ret;
 
 	ret = hostapd_get_hw_features(iface);
@@ -3848,6 +3849,17 @@ static void hostapd_iface_enable(struct hostapd_data *hapd)
 		return;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->disabled && is_5ghz_freq(iface->freq)) {
+		if (hostapd_drv_set_bootup_cac_feature_extn(hapd)) {
+			wpa_printf(MSG_ERROR,
+				   "disable_bootup_cac_feature vendor cmd failed for %s",
+				   hapd->conf->iface);
+			iface->conf->conf_extn.disable_bootup_cac_feature = 1;
+		}
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	wpa_msg(hapd->msg_ctx, MSG_INFO, INTERFACE_ENABLED);
 	if (hapd->disabled && hapd->started) {
 		hapd->disabled = 0;
@@ -3861,17 +3873,27 @@ static void hostapd_iface_enable(struct hostapd_data *hapd)
 		else
 			hostapd_reconfig_encryption(hapd);
 		hapd->reenable_beacon = 1;
-
+		if (is_5ghz_freq(iface->freq) &&
+		    hostapd_is_cac_required(iface)) {
+			restart_cac = true;
 #ifdef CONFIG_QCN_EXTN
-		hostapd_bootup_cac_start_extn(iface);
-#endif
-		ieee802_11_set_beacon(hapd);
+			if (hostapd_bootup_cac_enabled_extn(iface))
+				restart_cac = !hostapd_bootup_cac_start_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
+		}
+		if (!restart_cac)
+			ieee802_11_set_beacon(hapd);
+	}
+
 #ifdef NEED_AP_MLME
-	} else if (hapd->disabled && hostapd_is_cac_required(iface)) {
+	if (!restart_cac && hapd->disabled && !hapd->started &&
+	    hostapd_is_cac_required(iface))
+		restart_cac = true;
+	if (restart_cac) {
 		wpa_printf(MSG_DEBUG, "DFS: restarting pending CAC");
 		hostapd_handle_dfs(iface);
-#endif /* NEED_AP_MLME */
 	}
+#endif /* NEED_AP_MLME */
 }
 
 
