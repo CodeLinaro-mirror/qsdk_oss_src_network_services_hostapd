@@ -166,7 +166,8 @@ static int encode_client_sec_ctx_tlv(struct wpabuf *buf,
 		      4 + 4 + 1 + 1 +
 		      per_link_len +
 		      1 + sec_ctx->wpa_ie_len +
-		      1 + sec_ctx->rsnxe_len;
+		      1 + sec_ctx->rsnxe_len +
+		      1; /* auth_alg */
 
 	if (wpabuf_tailroom(buf) < WIFI8_TLV_HDR_LEN + val_len)
 		return -1;
@@ -205,6 +206,8 @@ static int encode_client_sec_ctx_tlv(struct wpabuf *buf,
 	wpabuf_put_u8(buf, sec_ctx->rsnxe_len);
 	if (sec_ctx->rsnxe_len > 0)
 		wpabuf_put_data(buf, sec_ctx->rsnxe, sec_ctx->rsnxe_len);
+
+	wpabuf_put_u8(buf, sec_ctx->auth_alg);
 
 	return 0;
 }
@@ -502,7 +505,11 @@ static int decode_client_sec_ctx_tlv(const u8 *val, u16 val_len,
 	if (out_sec_ctx->rsnxe_len > 0) {
 		if (p + out_sec_ctx->rsnxe_len > end) return -1;
 		os_memcpy(out_sec_ctx->rsnxe, p, out_sec_ctx->rsnxe_len);
+		p += out_sec_ctx->rsnxe_len;
 	}
+
+	if (p + 1 > end) return 0;
+	out_sec_ctx->auth_alg = *p++;
 
 	return 0;
 }
