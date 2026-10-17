@@ -461,6 +461,8 @@ struct wpabuf * ieee802_11_defrag(const u8 *data, size_t len, bool ext_elem);
 ssize_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
 				      const u8 *parent_subelem,
 				      size_t *defrag_len);
+size_t ieee802_11_fragments_length(struct ieee802_11_elems *elems,
+				   const u8 *start, size_t len);
 u8 get_link_id(const u8 *ml_ie);
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
 const u8 * get_basic_mle_mld_addr(const u8 *buf, size_t len);

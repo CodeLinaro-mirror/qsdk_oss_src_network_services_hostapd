@@ -287,8 +287,8 @@ static int ieee802_11_parse_mle(const u8 *pos, size_t elen, size_t **total_len,
 }
 
 
-static size_t ieee802_11_fragments_length(struct ieee802_11_elems *elems,
-					  const u8 *start, size_t len)
+size_t ieee802_11_fragments_length(struct ieee802_11_elems *elems,
+				   const u8 *start, size_t len)
 {
 	const struct element *elem;
 	size_t frags_len = 0;

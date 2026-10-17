@@ -972,7 +972,7 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, true, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse ML-IE");
 		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
 		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
@@ -1452,7 +1452,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, false, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse Reconfig ML IE");
 		uhr_cur_ap_send_st_exec_fail(hapd, sta, buf, len,
 					     WLAN_STATUS_UNSPECIFIED_FAILURE);
@@ -2701,8 +2701,8 @@ fail:
  * @hapd: hostapd data
  * @sta_addr: MLD MAC address
  * @sec_ctx: Security context from IAP
- * @ml_ie: Pointer to ML-IE
- * @ml_ie_len: Length of ML-IE
+ * @mlbuf: Already-defragmented Reconfiguration MLE
+ * Borrowed, caller retains ownership.
  * @req_list_out: Output parameter for request list
  * @assoc_hapd_out: Output parameter for association link hostapd instance
  * @assoc_sta_out: Output parameter for association link STA entry
@@ -2713,25 +2713,21 @@ static int uhr_tgt_ap_parse_ml(
 	const u8 *sta_addr,
 	const u8 *current_ap_mld_addr,
 	const struct uhr_iap_security_ctx *sec_ctx,
-	const u8 *ml_ie,
-	size_t ml_ie_len,
+	struct wpabuf *mlbuf,
 	struct uhr_link_reconf_req_list **req_list_out,
 	struct hostapd_data **assoc_hapd_out,
 	struct sta_info **assoc_sta_out)
 {
-	struct wpabuf *mlbuf;
 	struct uhr_link_reconf_req_list *req_list = NULL;
 	u8 assoc_link_id = 0;
 	int ret = -1;
 	bool assoc_link_found = false;
 	struct hostapd_data *assoc_hapd = NULL;
 	struct sta_info *assoc_sta = NULL;
-	
 
-	mlbuf = ieee802_11_defrag(ml_ie, ml_ie_len, true);
-	if (!mlbuf) 
+	if (!mlbuf)
 		return -1;
-		
+
 	if (uhr_build_reconf_req_list(hapd, sta_addr, sec_ctx,
 				mlbuf, &req_list) < 0)
 		goto out;
@@ -2769,7 +2765,7 @@ static int uhr_tgt_ap_parse_ml(
 		   "SMD ST PREP Target AP: ML-IE parsing complete");
 	
 out:
-	wpabuf_free(mlbuf);
+	/* mlbuf is borrowed from the caller -- do not free it here. */
 	if (ret && req_list)
 		uhr_deinit_link_reconf_req(&req_list);
 	return ret;
@@ -3210,8 +3206,7 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 {
 	const u8 *frame;
 	struct ieee802_11_elems elems;
-	const u8 *reconf_mle;
-	size_t reconf_mle_len;
+	struct wpabuf *reconf_mlbuf = NULL;
 	u8 dialog_token = 0;
 	u8 *response_frame = NULL;
 	size_t response_len = 0;
@@ -3270,10 +3265,12 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 		goto send_response;
 	}
 	
-	/* Check for ML-IE */
-	if (uhr_find_add_link_reconf_mle(frame + WLAN_ST_PREP_MIN_LEN,
-					 frame_len - WLAN_ST_PREP_MIN_LEN,
-					 &reconf_mle, &reconf_mle_len) < 0) {
+	/* Check for ML-IE. Returns an owned, already-defragmented buffer;
+	 * freed via the send_response path below. */
+	reconf_mlbuf = uhr_find_reconf_mle(frame + WLAN_ST_PREP_MIN_LEN,
+					   frame_len - WLAN_ST_PREP_MIN_LEN,
+					   true);
+	if (!reconf_mlbuf) {
 		wpa_printf(MSG_ERROR,
 			   "SMD ST PREP Target AP: No Add-Link ML-IE");
 		status_code = 1;
@@ -3328,8 +3325,7 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 	/* Parse ML-IE and process profiles (includes MLD-level PTK installation) */
 	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, iap->current_ap_mld_addr,
 				&iap->sec_ctx,
-			        reconf_mle,
-			        reconf_mle_len,
+			        reconf_mlbuf,
 			        &req_list,
 				&assoc_hapd, &assoc_sta) < 0) {
 		wpa_printf(MSG_ERROR,
@@ -3475,10 +3471,15 @@ send_response:
 
 	if (response_frame)
 		os_free(response_frame);
-	
+
 	if (req_list)
 		uhr_deinit_link_reconf_req(&req_list);
-	
+
+	/* Owned by this function (see uhr_find_reconf_mle()); freed here so
+	 * every exit path below is covered. */
+	wpabuf_free(reconf_mlbuf);
+	reconf_mlbuf = NULL;
+
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
 			   "SMD ST PREP Target AP: Failed to send IAP response");
@@ -3944,7 +3945,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, false, &mle) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC (tgt): Failed to parse Reconfig ML IE");
 		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
