@@ -40,6 +40,17 @@ enum uhr_smd_st_type {
 	UHR_SMD_ST_EXEC_RESP = 3,
 };
 
+/**
+ * enum tgt_smd_roam_state - SMD roaming state for non-AP STA
+ *
+ * complete state machine for SMD at Target AP for non-AP STA MLD
+ */
+enum tgt_smd_roam_state {
+	SMD_STA_ST_NONE,
+	SMD_STA_ST_PREP_DONE,
+	SMD_STA_ST_EXEC_DONE,
+};
+
 #define UHR_ST_IAP_TIMEOUT_USEC 5000000
 
 #define UHR_ST_GET_CTX_TIMEOUT_USEC 50000
@@ -197,6 +208,12 @@ void uhr_cleanup_sta_roam_contexts(struct hostapd_data *hapd, struct sta_info *s
 /* Target AP IAP receive handlers */
 void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
 				    const struct uhr_iap_frame *iap);
+/* SMD transition state accessors -- always resolve to the MLD assoc STA,
+ * since sta_info is per link and @sta may be a non-assoc-link record. */
+enum tgt_smd_roam_state uhr_sta_smd_state_get(struct hostapd_data *hapd,
+					      struct sta_info *sta);
+void uhr_sta_smd_state_set(struct hostapd_data *hapd, struct sta_info *sta,
+			   enum tgt_smd_roam_state state);
 /* ---- SMD counter failure reason enums --------------------------------- */
 
 #ifdef CONFIG_IEEE80211BN
