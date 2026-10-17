@@ -469,6 +469,8 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 			*pos |= 0x80; /* Bit 15 - Geospatial Location */
 		break;
 	case 2: /* Bits 16-23 */
+		if (hapd->conf->wnm_tfs)
+			*pos |= 0x01; /* Bit 16 - TFS */
 		if (hapd->conf->wnm_sleep_mode)
 			*pos |= 0x02; /* Bit 17 - WNM-Sleep Mode */
 		if (hapd->conf->wnm_tim_bcast)

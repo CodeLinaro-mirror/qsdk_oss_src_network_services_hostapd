@@ -224,6 +224,7 @@ int hostapd_drv_wnm_tim_bcast_set(struct hostapd_data *hapd,
 				   int enable);
 int hostapd_drv_wnm_tim_bcast_ap_enable(struct hostapd_data *hapd,
 					 int enable);
+int hostapd_drv_wnm_tfs_ap_enable(struct hostapd_data *hapd, int enable);
 
 int hostapd_drv_set_qos_map(struct hostapd_data *hapd, const u8 *qos_map_set,
 			    u8 qos_map_set_len);

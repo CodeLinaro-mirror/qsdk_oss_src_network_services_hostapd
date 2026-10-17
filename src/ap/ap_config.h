@@ -882,6 +882,7 @@ struct hostapd_bss_config {
 	char *time_zone;
 	int wnm_sleep_mode;
 	int wnm_sleep_mode_no_keys;
+	int wnm_tfs; /* Enable WNM Traffic Filtering Service (IEEE 802.11v) */
 	int bss_transition;
 
 	/* WNM TIM Broadcast (IEEE 802.11-2024 §11.21.10) */

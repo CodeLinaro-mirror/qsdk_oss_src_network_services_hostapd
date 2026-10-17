@@ -25,6 +25,16 @@
 
 #define MAX_TFS_IE_LEN  1024
 
+/* TFS Response element: [EID][Length][TFS ID][SubElemID][SubLen][Status] */
+#define WNM_TFS_RESP_ELEM_LEN       4  /* Length field value: TFS ID + subelement */
+#define WNM_TFS_STATUS_SUBELEM_ID   1
+#define WNM_TFS_STATUS_SUBELEM_LEN  1  /* subelement body is just the status byte */
+#define WNM_TFS_RESP_ENTRY_LEN      6  /* EID+Length+TFS ID+SubElemID+SubLen+Status */
+
+/* TFS Response action frame prefix: category+action+dialog_token */
+#define WNM_TFS_RESP_ACTION_HDR_LEN 3
+
+
 
 /* get the TFS IE from driver */
 static int ieee80211_11_get_tfs_ie(struct hostapd_data *hapd, const u8 *addr,
@@ -43,6 +53,79 @@ static int ieee80211_11_set_tfs_ie(struct hostapd_data *hapd, const u8 *addr,
 	wpa_printf(MSG_DEBUG, "%s: TFS set operation %d", __func__, oper);
 
 	return hostapd_drv_wnm_oper(hapd, oper, addr, buf, buf_len);
+}
+
+
+/* Build TFS Response IEs from driver's per-rule status results. */
+static u16 wnm_tfs_build_resp_ies(const u8 *results, u16 results_len,
+				   u8 *buf, u16 buf_size)
+{
+	u8 *pos = buf;
+	const u8 *end = buf + buf_size;
+	u16 n_results = results_len / 2;
+	u16 i;
+	u8 tfs_id, status;
+
+	if (results_len % 2)
+		wpa_printf(MSG_DEBUG,
+			   "WNM TFS: odd results_len=%u from driver, dropping trailing byte",
+			   results_len);
+
+	for (i = 0; i < n_results; i++) {
+		tfs_id = results[i * 2];
+		status = results[i * 2 + 1];
+
+		if (pos + WNM_TFS_RESP_ENTRY_LEN > end)
+			break;
+		*pos++ = WLAN_EID_TFS_RESP;         /* EID = 92 */
+		*pos++ = WNM_TFS_RESP_ELEM_LEN;
+		*pos++ = tfs_id;                     /* TFS ID (outer, once per element) */
+		*pos++ = WNM_TFS_STATUS_SUBELEM_ID;
+		*pos++ = WNM_TFS_STATUS_SUBELEM_LEN;
+		*pos++ = status;
+	}
+
+	return (u16)(pos - buf);
+}
+
+
+/* Install TFS rules in the driver and build the TFS Response IEs. */
+static int wnm_install_tfs_rules(struct hostapd_data *hapd, const u8 *addr,
+				  const u8 *req_ies, u16 req_len,
+				  u8 *resp_ies, u16 *resp_len)
+{
+	u8 *work_buf;
+	u16 work_len;
+
+	if (req_len > MAX_TFS_IE_LEN) {
+		wpa_printf(MSG_DEBUG, "WNM TFS: request IEs too large (%u)", req_len);
+		return -1;
+	}
+
+	work_buf = os_zalloc(MAX_TFS_IE_LEN);
+	if (!work_buf) {
+		wpa_printf(MSG_ERROR, "WNM TFS: OOM for scratch buffer");
+		*resp_len = 0;
+		return -1;
+	}
+
+	/* Driver overwrites this with per-rule [tfs_id, status] results. */
+	os_memcpy(work_buf, req_ies, req_len);
+	work_len = req_len;
+
+	if (hostapd_drv_wnm_oper(hapd, WNM_SLEEP_TFS_REQ_IE_SET,
+				  addr, work_buf, &work_len)) {
+		wpa_printf(MSG_DEBUG, "WNM TFS: driver install failed");
+		*resp_len = 0;
+		os_free(work_buf);
+		return -1;
+	}
+
+	/* work_buf now contains [{tfs_id, status}, ...], work_len = n_results*2 */
+	*resp_len = wnm_tfs_build_resp_ies(work_buf, work_len,
+					   resp_ies, *resp_len);
+	os_free(work_buf);
+	return 0;
 }
 
 
@@ -161,7 +244,8 @@ int wpa_wnmsleep_add_mlo_keys(void *hapd_ctx,
 /* MLME-SLEEPMODE.response */
 static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 					 const u8 *addr, u8 dialog_token,
-					 u8 action_type, u16 intval)
+					 u8 action_type, u16 intval,
+					 const u8 *tfs_ie, u16 tfs_ie_len)
 {
 	struct ieee80211_mgmt *mgmt;
 	int res;
@@ -264,7 +348,8 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 					MAX_BIGTK_SUBELEM_LEN;
 
 	mgmt = os_zalloc(sizeof(*mgmt) + wnmsleep_ie_len +
-			 wnmsleep_subie_size + oci_ie_len);
+			 wnmsleep_subie_size + wnmtfs_ie_len + tfs_ie_len +
+			 oci_ie_len);
 	if (mgmt == NULL) {
 		wpa_printf(MSG_DEBUG, "MLME: Failed to allocate buffer for "
 			   "WNM-Sleep Response action frame");
@@ -336,6 +421,11 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 		os_memcpy(pos, wnmtfs_ie, wnmtfs_ie_len);
 		pos += wnmtfs_ie_len;
 	}
+	/* copy TFS Response IEs (pre-built by caller) */
+	if (tfs_ie && tfs_ie_len) {
+		os_memcpy(pos, tfs_ie, tfs_ie_len);
+		pos += tfs_ie_len;
+	}
 #ifdef CONFIG_OCV
 	/* copy OCV OCI here */
 	if (oci_ie_len > 0)
@@ -343,7 +433,7 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 #endif /* CONFIG_OCV */
 
 	len = 1 + sizeof(mgmt->u.action.u.wnm_sleep_resp) + keydata_len +
-		wnmsleep_ie_len + wnmtfs_ie_len + oci_ie_len;
+		wnmsleep_ie_len + wnmtfs_ie_len + tfs_ie_len + oci_ie_len;
 
 	/* In driver, response frame should be forced to sent when STA is in
 	 * PS mode */
@@ -399,6 +489,9 @@ static void ieee802_11_rx_wnmsleep_req(struct hostapd_data *hapd,
 	u8 *tfsreq_ie_start = NULL;
 	u8 *tfsreq_ie_end = NULL;
 	u16 tfsreq_ie_len = 0;
+	u16 tfs_del_len = 0; /* used for NULL-buf TFS_IE_DEL calls */
+	u8 *tfs_resp_ie;
+	u16 tfs_resp_len;
 #ifdef CONFIG_OCV
 	struct sta_info *sta;
 	const u8 *oci_ie = NULL;
@@ -472,25 +565,46 @@ static void ieee802_11_rx_wnmsleep_req(struct hostapd_data *hapd,
 
 	if (wnmsleep_ie->action_type == WNM_SLEEP_MODE_ENTER &&
 	    tfsreq_ie_start && tfsreq_ie_end &&
-	    tfsreq_ie_end - tfsreq_ie_start >= 0) {
+	    tfsreq_ie_end - tfsreq_ie_start >= 0 &&
+	    hapd->conf->wnm_tfs) {
 		tfsreq_ie_len = (tfsreq_ie_end + tfsreq_ie_end[1] + 2) -
 			tfsreq_ie_start;
 		wpa_printf(MSG_DEBUG, "TFS Req IE(s) found");
-		/* pass the TFS Req IE(s) to driver for processing */
-		if (ieee80211_11_set_tfs_ie(hapd, addr, tfsreq_ie_start,
-					    &tfsreq_ie_len,
-					    WNM_SLEEP_TFS_REQ_IE_SET))
-			wpa_printf(MSG_DEBUG, "Fail to set TFS Req IE");
+
+		tfs_resp_ie = os_zalloc(MAX_TFS_IE_LEN);
+		if (!tfs_resp_ie) {
+			wpa_printf(MSG_ERROR, "WNM TFS: OOM for response buffer");
+			return;
+		}
+		tfs_resp_len = MAX_TFS_IE_LEN;
+
+		/* Driver returns per-rule status; build the response IE's */
+		if (wnm_install_tfs_rules(hapd, addr, tfsreq_ie_start,
+					  tfsreq_ie_len, tfs_resp_ie,
+					  &tfs_resp_len) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "WNM: TFS rule install failed for " MACSTR,
+				   MAC2STR(addr));
+			tfs_resp_len = 0;
+		}
+
+		ieee802_11_send_wnmsleep_resp(hapd, addr, dialog_token,
+					      wnmsleep_ie->action_type,
+					      le_to_host16(wnmsleep_ie->intval),
+					      tfs_resp_ie, tfs_resp_len);
+		os_free(tfs_resp_ie);
+	} else {
+		/* EXIT or no TFS IEs */
+		ieee802_11_send_wnmsleep_resp(hapd, addr, dialog_token,
+					      wnmsleep_ie->action_type,
+					      le_to_host16(wnmsleep_ie->intval),
+					      NULL, 0);
 	}
 
-	ieee802_11_send_wnmsleep_resp(hapd, addr, dialog_token,
-				      wnmsleep_ie->action_type,
-				      le_to_host16(wnmsleep_ie->intval));
-
 	if (wnmsleep_ie->action_type == WNM_SLEEP_MODE_EXIT) {
-		/* clear the tfs after sending the resp frame */
-		ieee80211_11_set_tfs_ie(hapd, addr, tfsreq_ie_start,
-					&tfsreq_ie_len, WNM_SLEEP_TFS_IE_DEL);
+		/* NULL buf forces the kernel to delete TFS rules unconditionally */
+		ieee80211_11_set_tfs_ie(hapd, addr, NULL, &tfs_del_len,
+					WNM_SLEEP_TFS_IE_DEL);
 	}
 }
 
@@ -1274,6 +1388,115 @@ static void ieee802_11_rx_wnm_tim_bcast_req(struct hostapd_data *hapd,
 }
 
 
+/* Standalone TFS Request action frame (Category=10, Action=13). */
+static void ieee802_11_rx_tfs_req(struct hostapd_data *hapd, const u8 *addr,
+				   const u8 *payload, size_t plen)
+{
+	u8 dialog_token;
+	u8 *tfs_resp_ie;
+	u16 tfs_resp_len;
+	u16 tfs_del_len = 0; /* used for NULL-buf TFS_IE_DEL calls */
+	u8 *buf;
+	struct ieee80211_mgmt *mgmt;
+	u8 *pos;
+	struct sta_info *sta;
+
+	if (plen < 1) {
+		wpa_printf(MSG_DEBUG, "WNM: Too short TFS Request from " MACSTR,
+			   MAC2STR(addr));
+		return;
+	}
+
+	if (!hapd->conf->wnm_tfs) {
+		wpa_printf(MSG_DEBUG, "WNM: Ignore TFS Request from " MACSTR
+			   " - wnm_tfs not enabled", MAC2STR(addr));
+		return;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TFS Request from unknown STA " MACSTR,
+			   MAC2STR(addr));
+		return;
+	}
+
+	dialog_token = *payload++;
+	plen--;
+
+	wpa_printf(MSG_DEBUG, "WNM: TFS Request from " MACSTR
+		   " dialog_token=%u ie_bytes=%zu",
+		   MAC2STR(addr), dialog_token, plen);
+
+	tfs_resp_ie = os_zalloc(MAX_TFS_IE_LEN);
+	if (!tfs_resp_ie) {
+		wpa_printf(MSG_ERROR, "WNM TFS: OOM for response IE buffer");
+		return;
+	}
+
+	buf = os_zalloc(IEEE80211_HDRLEN + WNM_TFS_RESP_ACTION_HDR_LEN + MAX_TFS_IE_LEN);
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "WNM TFS: OOM for response frame buffer");
+		os_free(tfs_resp_ie);
+		return;
+	}
+
+	tfs_resp_len = 0;
+
+	if (plen == 0) {
+		/* Zero TFS Request elements cancels all existing agreements. */
+		wpa_printf(MSG_DEBUG, "WNM: TFS cancel-all from " MACSTR,
+			   MAC2STR(addr));
+		ieee80211_11_set_tfs_ie(hapd, addr, NULL, &tfs_del_len,
+					WNM_SLEEP_TFS_IE_DEL);
+	} else if (plen > 0xFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "WNM: TFS Request IE length too large from "
+			   MACSTR " (%zu)", MAC2STR(addr), plen);
+		os_free(tfs_resp_ie);
+		os_free(buf);
+		return;
+	} else {
+		/* Driver returns per-rule status; build the response IE's */
+		tfs_resp_len = MAX_TFS_IE_LEN;
+		if (wnm_install_tfs_rules(hapd, addr, payload, (u16)plen,
+					  tfs_resp_ie, &tfs_resp_len) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "WNM: TFS rule install failed for " MACSTR,
+				   MAC2STR(addr));
+			tfs_resp_len = 0;
+		}
+	}
+
+	/* Build and send TFS Response action frame */
+	mgmt = (struct ieee80211_mgmt *)buf;
+	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	os_memcpy(mgmt->da, addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, wnm_ap_get_own_addr(hapd, sta), ETH_ALEN);
+	os_memcpy(mgmt->bssid, wnm_ap_get_own_addr(hapd, sta), ETH_ALEN);
+	pos = buf + IEEE80211_HDRLEN;
+	*pos++ = WLAN_ACTION_WNM;
+	*pos++ = WNM_TFS_RESP;
+	*pos++ = dialog_token;
+
+	if (tfs_resp_len > 0) {
+		os_memcpy(pos, tfs_resp_ie, tfs_resp_len);
+		pos += tfs_resp_len;
+	}
+
+	wpa_printf(MSG_DEBUG, "WNM: Sending TFS Response to " MACSTR
+		   " dialog_token=%u", MAC2STR(addr), dialog_token);
+	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0, 0, 0) < 0)
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Failed to send TFS Response to " MACSTR,
+			   MAC2STR(addr));
+
+	os_free(tfs_resp_ie);
+	os_free(buf);
+}
+
+
 int ieee802_11_rx_wnm_action_ap(struct hostapd_data *hapd,
 				const struct ieee80211_mgmt *mgmt, size_t len)
 {
@@ -1317,6 +1540,9 @@ int ieee802_11_rx_wnm_action_ap(struct hostapd_data *hapd,
 	case WNM_TIM_BROADCAST_REQ:
 		ieee802_11_rx_wnm_tim_bcast_req(hapd, mgmt->sa, payload,
 					        (int) plen);
+		return 0;
+	case WNM_TFS_REQ:
+		ieee802_11_rx_tfs_req(hapd, mgmt->sa, payload, plen);
 		return 0;
 	}
 
