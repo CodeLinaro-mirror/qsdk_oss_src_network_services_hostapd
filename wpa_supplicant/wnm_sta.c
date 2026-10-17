@@ -2177,6 +2177,183 @@ int ieee802_11_send_wnm_tim_bcast_req(struct wpa_supplicant *wpa_s, u8 interval)
 }
 
 
+#define WNM_TFS_SUBELEM_ID 1   /* Table 9-263 */
+
+/* Worst-case scratch buffer sizes, derived from the WNM_TFS_MAX_* bounds above. */
+#define WNM_TFS_TCLAS_MAX_LEN   (5 + 2 + 2 * WNM_TFS_MAX_FILTER_LEN)
+#define WNM_TFS_SUBELEM_MAX_LEN (2 + WNM_TFS_MAX_TCLAS * WNM_TFS_TCLAS_MAX_LEN + 3)
+#define WNM_TFS_RULE_MAX_LEN    (4 + WNM_TFS_MAX_SUBELEMENTS * WNM_TFS_SUBELEM_MAX_LEN)
+#define WNM_TFS_REQ_MAX_LEN     (WNM_TFS_MAX_RULES * WNM_TFS_RULE_MAX_LEN)
+
+
+/* Serializes one TCLAS element (9.4.2.29/9.4.2.30). */
+static size_t tfs_write_tclas(u8 *pos, const struct tfs_tclas *tc)
+{
+	u8 *start = pos;
+	u8 *lenpos;
+
+	*pos++ = WLAN_EID_TCLAS;
+	lenpos = pos++;
+	*pos++ = tc->user_priority;
+	*pos++ = tc->type;
+	*pos++ = tc->classifier_mask;
+
+	if (tc->type == 1 || tc->type == 4) {
+		*pos++ = tc->ip_version;
+		if (tc->ip_version == 6) {
+			os_memcpy(pos, tc->src_ip, 16);
+			pos += 16;
+			os_memcpy(pos, tc->dst_ip, 16);
+			pos += 16;
+			WPA_PUT_BE16(pos, tc->src_port);
+			pos += 2;
+			WPA_PUT_BE16(pos, tc->dst_port);
+			pos += 2;
+			if (tc->type == 4) {
+				/* Type 4 adds DSCP + Next Header vs. Type 1 on
+				 * the IPv6 wire format. */
+				*pos++ = tc->dscp;
+				*pos++ = tc->protocol;
+			}
+			os_memcpy(pos, tc->flow_label, 3);
+			pos += 3;
+		} else { /* IPv4 */
+			os_memcpy(pos, tc->src_ip, 4);
+			pos += 4;
+			os_memcpy(pos, tc->dst_ip, 4);
+			pos += 4;
+			WPA_PUT_BE16(pos, tc->src_port);
+			pos += 2;
+			WPA_PUT_BE16(pos, tc->dst_port);
+			pos += 2;
+			*pos++ = tc->dscp;
+			*pos++ = tc->protocol;
+		}
+	} else { /* type == 3: generic filter_offset/value/mask */
+		WPA_PUT_BE16(pos, tc->filter_offset);
+		pos += 2;
+		os_memcpy(pos, tc->filter_value, tc->filter_len);
+		pos += tc->filter_len;
+		os_memcpy(pos, tc->filter_mask, tc->filter_len);
+		pos += tc->filter_len;
+	}
+
+	*lenpos = (u8) (pos - start - 2);
+	return pos - start;
+}
+
+
+/* Serializes one TFS subelement (Figure 9-544). */
+static size_t tfs_write_subelement(u8 *pos, const struct tfs_subelement *se)
+{
+	u8 *start = pos;
+	u8 *lenpos;
+	int i;
+
+	*pos++ = WNM_TFS_SUBELEM_ID;
+	lenpos = pos++;
+
+	for (i = 0; i < se->num_tclas; i++)
+		pos += tfs_write_tclas(pos, &se->tclas[i]);
+
+	if (se->num_tclas > 1) {
+		*pos++ = WLAN_EID_TCLAS_PROCESSING;
+		*pos++ = 1;
+		*pos++ = se->tclas_process;
+	}
+
+	*lenpos = (u8) (pos - start - 2);
+	return pos - start;
+}
+
+
+/* Serializes one TFS Request element (Figure 9-543). */
+static size_t tfs_write_rule(u8 *pos, const struct tfs_rule *rule)
+{
+	u8 *start = pos;
+	u8 *lenpos;
+	u8 action = 0;
+	int i;
+
+	*pos++ = WLAN_EID_TFS_REQ;
+	lenpos = pos++;
+	*pos++ = rule->tfs_id;
+	if (rule->delete_rule)
+		action |= 0x01; /* Delete After Match, Table 9-262 bit 0 */
+	if (rule->notify)
+		action |= 0x02; /* Notify, Table 9-262 bit 1 */
+	*pos++ = action;
+
+	for (i = 0; i < rule->num_subelem; i++)
+		pos += tfs_write_subelement(pos, &rule->subelem[i]);
+
+	*lenpos = (u8) (pos - start - 2);
+	return pos - start;
+}
+
+
+/* Sends a TFS Request action frame (Category=10, Action=13); 0 rules cancels all. */
+int ieee802_11_send_wnm_tfs_req(struct wpa_supplicant *wpa_s,
+				const struct tfs_rule *rules, u8 num_rules)
+{
+	struct ieee80211_mgmt *mgmt;
+	u8 *body;
+	u8 *pos;
+	size_t body_len;
+	int ret;
+	int i;
+
+	if (num_rules > WNM_TFS_MAX_RULES) {
+		wpa_printf(MSG_DEBUG, "WNM: Too many TFS rules (%u > %d)",
+			   num_rules, WNM_TFS_MAX_RULES);
+		return -1;
+	}
+
+	body = os_zalloc(WNM_TFS_REQ_MAX_LEN);
+	if (!body)
+		return -1;
+
+	pos = body;
+	for (i = 0; i < num_rules; i++)
+		pos += tfs_write_rule(pos, &rules[i]);
+	body_len = pos - body;
+
+	mgmt = os_zalloc(sizeof(*mgmt) + body_len);
+	if (!mgmt) {
+		os_free(body);
+		return -1;
+	}
+
+	os_memcpy(mgmt->da, wpa_s->bssid, ETH_ALEN);
+	os_memcpy(mgmt->sa, wpa_s->own_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, wpa_s->bssid, ETH_ALEN);
+	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	mgmt->u.action.category = WLAN_ACTION_WNM;
+	pos = (u8 *) &mgmt->u.action.u.public_action.action;
+	*pos++ = WNM_TFS_REQ;
+	*pos++ = wpa_s->tfs_dialog_token =
+		(wpa_s->tfs_dialog_token % 255) + 1;
+	if (body_len)
+		os_memcpy(pos, body, body_len);
+	pos += body_len;
+
+	wpa_printf(MSG_DEBUG,
+		   "WNM: Sending TFS Request to " MACSTR
+		   " dialog_token=%u num_rules=%u body_len=%zu",
+		   MAC2STR(wpa_s->bssid), wpa_s->tfs_dialog_token, num_rules,
+		   body_len);
+
+	ret = wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0,
+				  mgmt->da, mgmt->sa, mgmt->bssid,
+				  &mgmt->u.action.category,
+				  pos - &mgmt->u.action.category, 0);
+	os_free(mgmt);
+	os_free(body);
+	return ret;
+}
+
+
 static void ieee802_11_rx_wnm_tim_bcast_resp(struct wpa_supplicant *wpa_s,
 					      const u8 *pos, size_t len)
 {
@@ -2242,6 +2419,54 @@ static void ieee802_11_rx_wnm_tim_bcast_resp(struct wpa_supplicant *wpa_s,
 }
 
 
+/* Parses a TFS Response action frame (Category=10, Action=14), Figure 9-546. */
+static void ieee802_11_rx_wnm_tfs_resp(struct wpa_supplicant *wpa_s,
+					const u8 *pos, size_t len)
+{
+	u8 dialog_token;
+
+	if (len < 1) {
+		wpa_printf(MSG_DEBUG, "WNM: Too short TFS Response");
+		return;
+	}
+
+	dialog_token = *pos++;
+	len--;
+
+	wpa_printf(MSG_DEBUG, "WNM: TFS Response from " MACSTR
+		   " dialog_token=%u", MAC2STR(wpa_s->bssid), dialog_token);
+
+	while (len >= 2) {
+		u8 eid = pos[0];
+		u8 elen = pos[1];
+
+		if (len < (size_t) 2 + elen)
+			break;
+
+		if (eid == WLAN_EID_TFS_RESP && elen == 4 &&
+		    pos[3] == 1 && pos[4] == 1) {
+			u8 tfs_id = pos[2];
+			u8 status = pos[5];
+
+			if (status == 0)
+				wpa_msg(wpa_s, MSG_INFO,
+					"WNM-TFS-ACCEPTED tfs_id=%u", tfs_id);
+			else
+				wpa_msg(wpa_s, MSG_INFO,
+					"WNM-TFS-REJECTED tfs_id=%u status=%u",
+					tfs_id, status);
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Unexpected element in TFS Response (eid=%u len=%u)",
+				   eid, elen);
+		}
+
+		pos += 2 + elen;
+		len -= 2 + elen;
+	}
+}
+
+
 void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 			      const struct ieee80211_mgmt *mgmt, size_t len)
 {
@@ -2285,6 +2510,9 @@ void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 		break;
 	case WNM_TIM_BROADCAST_RESP:
 		ieee802_11_rx_wnm_tim_bcast_resp(wpa_s, pos, end - pos);
+		break;
+	case WNM_TFS_RESP:
+		ieee802_11_rx_wnm_tfs_resp(wpa_s, pos, end - pos);
 		break;
 	default:
 		wpa_printf(MSG_ERROR, "WNM: Unknown request");

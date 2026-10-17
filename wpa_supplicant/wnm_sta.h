@@ -83,6 +83,54 @@ int ieee802_11_send_wnmsleep_req(struct wpa_supplicant *wpa_s,
 int ieee802_11_send_wnm_tim_bcast_req(struct wpa_supplicant *wpa_s,
 				       u8 interval);
 
+/* Standalone WNM TFS Request (IEEE Std 802.11-2024, 9.4.2.78/9.4.2.79, 11.21.12) */
+
+#define WNM_TFS_MAX_RULES        2   /* TFS Request elements per frame */
+#define WNM_TFS_MAX_SUBELEMENTS  2   /* TFS subelements per rule */
+#define WNM_TFS_MAX_TCLAS        2   /* TCLAS classifiers per subelement */
+#define WNM_TFS_MAX_FILTER_LEN   125 /* Type 3 filter value/mask length */
+
+/* One TCLAS classifier (IEEE 802.11-2024, 9.4.2.29). */
+struct tfs_tclas {
+	u8 type;               /* 1, 3, or 4 */
+	u8 user_priority;      /* 0-7 */
+	u8 classifier_mask;    /* opaque pass-through; AP/driver-interpreted */
+
+	u8 ip_version;         /* 4 or 6; type == 1 || type == 4 */
+	u8 src_ip[16];         /* all-zero = wildcard "match any" */
+	u8 dst_ip[16];
+	u16 src_port;          /* 0 = wildcard */
+	u16 dst_port;
+	u8 dscp;               /* type == 4 only, on the wire */
+	u8 protocol;           /* IPv4 Protocol, or IPv6 Next Header (type == 4 only) */
+	u8 flow_label[3];      /* IPv6 only */
+
+	u16 filter_offset;     /* type == 3 */
+	u8 filter_len;
+	u8 filter_value[WNM_TFS_MAX_FILTER_LEN];
+	u8 filter_mask[WNM_TFS_MAX_FILTER_LEN];
+};
+
+/* One TFS subelement (SubElemID=1, Figure 9-544). */
+struct tfs_subelement {
+	struct tfs_tclas tclas[WNM_TFS_MAX_TCLAS];
+	u8 num_tclas;
+	u8 tclas_process;      /* wire value: 0=AND, 1=OR (Table 9-210) */
+};
+
+/* One TFS Request element (Figure 9-543): one traffic filter set, one TFS ID. */
+struct tfs_rule {
+	u8 tfs_id;
+	u8 delete_rule;        /* TFS Action Code bit 0 (Table 9-262) */
+	u8 notify;              /* TFS Action Code bit 1 */
+	struct tfs_subelement subelem[WNM_TFS_MAX_SUBELEMENTS];
+	u8 num_subelem;
+};
+
+/* Sends a TFS Request action frame (Category=10, Action=13); 0 rules cancels all. */
+int ieee802_11_send_wnm_tfs_req(struct wpa_supplicant *wpa_s,
+				const struct tfs_rule *rules, u8 num_rules);
+
 void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 			      const struct ieee80211_mgmt *mgmt, size_t len);
 

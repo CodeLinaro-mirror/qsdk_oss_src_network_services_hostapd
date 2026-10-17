@@ -1512,6 +1512,9 @@ struct wpa_supplicant {
 #endif /* CONFIG_MBO */
 #endif /* CONFIG_WNM */
 
+	/* WNM TFS Request dialog token */
+	u8 tfs_dialog_token;
+
 #ifdef CONFIG_TESTING_GET_GTK
 	u8 last_gtk[32];
 	size_t last_gtk_len;
