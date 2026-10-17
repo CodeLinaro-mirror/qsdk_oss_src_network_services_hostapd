@@ -1457,6 +1457,19 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 				wpa_auth->pmksa, sm->p2p_dev_addr,
 				&data.pmkid[i * PMKID_LEN]);
 		if (sm->pmksa) {
+		/* Validate that PMKID is not stale - reject if it doesn't match current PMKID */
+		if (sm->pmkid_set &&
+		    os_memcmp(sm->pmksa->pmkid, sm->pmkid, PMKID_LEN) != 0) {
+			wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,
+					 "Rejecting stale PMKID from STA - cached PMKID does not match current PMKID");
+			wpa_hexdump(MSG_DEBUG, "WPA: Cached PMKID",
+				    sm->pmksa->pmkid, PMKID_LEN);
+			wpa_hexdump(MSG_DEBUG, "WPA: Current PMKID",
+				    sm->pmkid, PMKID_LEN);
+			wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,
+					 "Forcing fresh SAE for STA");
+			return WPA_INVALID_PMKID;
+		}
 			pmkid = sm->pmksa->pmkid;
 			break;
 		}
