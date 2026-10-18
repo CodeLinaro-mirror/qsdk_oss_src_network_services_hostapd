@@ -8697,42 +8697,49 @@ bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd)
 
 
 /*
- * hostapd_mlo_link_rej_prio - Return band rejection priority for a link.
+ * hostapd_mlo_get_link_rej_priority - Return rejection priority for a link.
  *
- * Two rejection modes are supported:
+ * Three rejection modes are supported:
  *
- * Mode 0 — default band-priority:
- *   6G (3) > 5G (2) > 2G (1)
- *   When the mld_max_links_per_sta cap is hit, 2G is rejected first.
+ * ML_LINK_REJ_DISABLED(default):
+ *   The link rejection is disabled.
+ *   The priority is not used to reject links in this mode.
  *
- * Mode 1 — range mode (mirrors qca-wifi MLO_LINK_REJ_RANGE):
- *   6G (3) > 2G (2) > 5G (1)
- *   2G is never rejected; 5G is rejected first when the cap is hit.
+ * ML_LINK_REJ_RANGE:
+ *   2G is protected from rejection. Non-2G links are ordered by effective
+ *   STA bandwidth, with lower bandwidth rejected first. For equal bandwidth,
+ *   5G is rejected before 6G.
+ *
+ * ML_LINK_REJ_THROUGHPUT:
+ *   All bands are ordered by effective STA bandwidth. For equal bandwidth,
+ *   2G is rejected before 5G, and 5G is rejected before 6G.
  *
  * Higher priority = kept longer; lowest priority = rejected first.
- * Returns 2 (5G default) if the link BSS frequency cannot be determined.
  */
-static u8 hostapd_mlo_link_rej_prio(struct hostapd_data *hapd,
-				     struct hostapd_data *link_bss)
+static u16 hostapd_mlo_get_link_rej_priority(struct hostapd_data *hapd,
+					     struct hostapd_data *link_bss,
+					     u16 effective_bw)
 {
 	u8 mode = hapd->conf->mld_link_rej_mode;
 	int freq;
-	u8 prio;
+	u16 prio;
 
 	if (!link_bss || !link_bss->iface)
 		return 2;
 
 	freq = link_bss->iface->freq;
 
-	if (mode == 1) {
-		/* Range mode: never reject 2G, reject 5G first */
+	if (mode == ML_LINK_REJ_RANGE) {
+		/* Protect 2G links from rejection in range mode. */
 		if (IS_2P4GHZ(freq))
-			prio = 2;
-		else if (is_6ghz_freq(freq))
-			prio = 3;
-		else
-			prio = 1; /* 5G: lowest priority, rejected first */
-		return prio;
+			return 1000;
+	}
+
+	if (mode == ML_LINK_REJ_RANGE ||
+	    mode == ML_LINK_REJ_THROUGHPUT) {
+		/* Prefer 6G, then 5G, then 2G when bandwidth is equal. */
+		return effective_bw * 3 +
+			(is_6ghz_freq(freq) ? 2 : IS_2P4GHZ(freq) ? 0 : 1);
 	}
 
 	/* Default mode: reject 2G first */
@@ -8743,6 +8750,187 @@ static u8 hostapd_mlo_link_rej_prio(struct hostapd_data *hapd,
 	else
 		prio = 2;
 	return prio;
+}
+
+
+static u16 hostapd_mlo_get_effective_bw(struct hostapd_data *link_bss,
+					struct wpabuf *mlbuf, u8 link_id)
+{
+	struct ieee802_11_elems elems;
+	struct supported_chan_width sta_width;
+	enum chan_width ap_chan_width, effective_width;
+	enum oper_chan_width ap_oper_width;
+	int ap_bw;
+
+	ap_oper_width = hostapd_get_oper_chan_width_of_bss(link_bss);
+	ap_bw = hostapd_get_bw_from_oper_width(
+		ap_oper_width, link_bss->iconf->secondary_channel);
+	if (!mlbuf)
+		return ap_bw;
+
+	os_memset(&elems, 0, sizeof(elems));
+	if (ieee802_11_parse_link_assoc_req(&elems, mlbuf, link_id, false) !=
+	    ParseOK)
+		return ap_bw;
+
+	sta_width = get_supported_channel_width(&elems);
+	switch (ap_bw) {
+	case 320:
+		ap_chan_width = CHAN_WIDTH_320;
+		break;
+	case 160:
+		ap_chan_width = CHAN_WIDTH_160;
+		break;
+	case 80:
+		ap_chan_width = CHAN_WIDTH_80;
+		break;
+	case 40:
+		ap_chan_width = CHAN_WIDTH_40;
+		break;
+	default:
+		ap_chan_width = CHAN_WIDTH_20;
+		break;
+	}
+
+	effective_width = get_sta_operation_chan_width(ap_chan_width, sta_width);
+	return channel_width_to_int(effective_width);
+}
+
+
+static int hostapd_mlo_check_min_links(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       int tx_link_status)
+{
+	unsigned int partner_link_count = 0;
+	int i;
+
+	if (!hapd->conf->mld_min_links_per_sta ||
+	    tx_link_status != WLAN_STATUS_SUCCESS)
+		return 0;
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (sta->mld_info.links[i].valid &&
+		    i != sta->mld_assoc_link_id)
+			partner_link_count++;
+	}
+
+	return (partner_link_count + 1) < hapd->conf->mld_min_links_per_sta ?
+		-1 : 0;
+}
+
+
+static int
+hostapd_mlo_check_range_protected_links(struct hostapd_data *hapd,
+					struct sta_info *sta,
+					int tx_link_status)
+{
+	unsigned int protected_links = 1; /* TX link */
+	struct hostapd_data *bss = NULL;
+	int i;
+
+	if (hapd->conf->mld_link_rej_mode != ML_LINK_REJ_RANGE ||
+	    !hapd->conf->mld_max_links_per_sta ||
+	    tx_link_status != WLAN_STATUS_SUCCESS)
+		return 0;
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (!sta->mld_info.links[i].valid ||
+		    i == sta->mld_assoc_link_id)
+			continue;
+
+		bss = NULL;
+		for_each_mld_link(bss, hapd) {
+			if (bss == hapd || bss->mld_link_id != i ||
+			    !bss->started || !bss->beacon_set_done)
+				continue;
+			break;
+		}
+
+		if (bss && bss->iface && IS_2P4GHZ(bss->iface->freq))
+			protected_links++;
+	}
+
+	if (protected_links > hapd->conf->mld_max_links_per_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: protected 2G links (%u) exceed max links (%u)",
+			   protected_links,
+			   hapd->conf->mld_max_links_per_sta);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static void hostapd_mlo_prepare_link_order(struct hostapd_data *hapd,
+					   struct sta_info *sta,
+					   const u8 *ies, size_t ies_len,
+					   u8 *sorted_links,
+					   unsigned int *num_links)
+{
+	bool disabled_rej = hapd->conf->mld_link_rej_mode == ML_LINK_REJ_DISABLED;
+	bool bandwidth_rej = hapd->conf->mld_link_rej_mode == ML_LINK_REJ_RANGE ||
+		hapd->conf->mld_link_rej_mode == ML_LINK_REJ_THROUGHPUT;
+	u16 sorted_prio[MAX_NUM_MLD_LINKS];
+	struct wpabuf *mlbuf = NULL;
+	struct ieee802_11_elems elems;
+	unsigned int i, si;
+
+	*num_links = 0;
+
+	if (disabled_rej) {
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			if (!sta->mld_info.links[i].valid ||
+			    i == sta->mld_assoc_link_id)
+				continue;
+
+			sorted_links[(*num_links)++] = i;
+		}
+
+		return;
+	}
+
+	if (bandwidth_rej &&
+	    ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseOK)
+		mlbuf = ieee802_11_defrag(elems.basic_mle,
+					  elems.basic_mle_len, true);
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		struct hostapd_data *bss = NULL;
+		u16 prio = 2; /* default: 5G */
+		u16 effective_bw = 20;
+
+		if (!sta->mld_info.links[i].valid ||
+		    i == sta->mld_assoc_link_id)
+			continue;
+
+		for_each_mld_link(bss, hapd) {
+			if (bss == hapd || bss->mld_link_id != i ||
+			    !bss->started)
+				continue;
+			break;
+		}
+
+		if (bss && bss->mld_link_id == i && bss->started) {
+			if (bandwidth_rej)
+				effective_bw = hostapd_mlo_get_effective_bw(
+					bss, mlbuf, i);
+			prio = hostapd_mlo_get_link_rej_priority(hapd, bss,
+								effective_bw);
+		}
+
+		si = *num_links;
+		while (si > 0 && sorted_prio[si - 1] < prio) {
+			sorted_links[si] = sorted_links[si - 1];
+			sorted_prio[si] = sorted_prio[si - 1];
+			si--;
+		}
+		sorted_links[si] = i;
+		sorted_prio[si] = prio;
+		(*num_links)++;
+	}
+
+	wpabuf_free(mlbuf);
 }
 
 
@@ -8758,8 +8946,18 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	unsigned int i;
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
+	bool disabled_rej = hapd->conf->mld_link_rej_mode ==
+		ML_LINK_REJ_DISABLED;
+	bool range_rej = hapd->conf->mld_link_rej_mode ==
+		ML_LINK_REJ_RANGE;
+	bool abort_assoc = false;
 	u16 eml_cap = 0;
 	unsigned int accepted_links = 0;
+	u8 sorted_links[MAX_NUM_MLD_LINKS];
+	unsigned int n_sorted = 0, si;
+	struct hostapd_data *bss = NULL;
+	struct mld_link_info *link = NULL;
+	bool link_bss_found = false;
 
 	if (!hapd->conf->mld_ap)
 		return 0;
@@ -8829,74 +9027,14 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 		accepted_links = 1;
 	}
 
-	/*
-	 * Reject the whole association if the STA requests fewer links than
-	 * the configured minimum. The TX link counts as 1, so total requested
-	 * links = partner_link_count + 1.
-	 */
-	if (hapd->conf->mld_min_links_per_sta &&
-	    tx_link_status == WLAN_STATUS_SUCCESS) {
-		unsigned int partner_link_count = 0;
-		int pi;
+	if (hostapd_mlo_check_min_links(hapd, sta, tx_link_status) < 0)
+		return -1;
 
-		for (pi = 0; pi < MAX_NUM_MLD_LINKS; pi++) {
-			if (sta->mld_info.links[pi].valid &&
-			    pi != sta->mld_assoc_link_id)
-				partner_link_count++;
-		}
-		if ((partner_link_count + 1) < hapd->conf->mld_min_links_per_sta)
-			return -1;
-	}
+	if (hostapd_mlo_check_range_protected_links(hapd, sta, tx_link_status) < 0)
+		return -1;
 
-	/*
-	 * Process each partner link independently.  A failure on one link
-	 * must not abort the association on the remaining links (IEEE
-	 * 802.11be-2024 §35.3.6).  For every rejected link we:
-	 *   1. Set the per-link Status Code in mld_link_info.
-	 *   2. Mark mld_link_info.rejected so downstream code (assoc-cb,
-	 *      4-way HS KDE processing) can skip it cleanly.
-	 *   3. Build the per-STA profile response with the error status.
-	 *   4. Release the RSN authenticator reference for that link.
-	 * Only if the TX (assoc) link itself fails do we propagate -1 to
-	 * the caller and abort the whole association.
-	 */
-	{
-		u8 sorted_links[MAX_NUM_MLD_LINKS];
-		u8 sorted_prio[MAX_NUM_MLD_LINKS];
-		unsigned int n_sorted = 0, si;
-		struct hostapd_data *bss = NULL;
-		struct mld_link_info *link = NULL;
-		bool link_bss_found = false;
-
-		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-			struct mld_link_info *slink = &sta->mld_info.links[i];
-			struct hostapd_data *bss2 = NULL;
-			u8 prio = 2; /* default: 5G */
-
-			if (!slink->valid || i == sta->mld_assoc_link_id)
-				continue;
-
-			for_each_mld_link(bss2, hapd) {
-				if (bss2 == hapd || bss2->mld_link_id != i ||
-				    !bss2->started)
-					continue;
-				break;
-			}
-
-			if (bss2 && bss2->mld_link_id == i && bss2->started)
-				prio = hostapd_mlo_link_rej_prio(hapd, bss2);
-
-			/* insertion sort by descending priority (highest first) */
-			si = n_sorted;
-			while (si > 0 && sorted_prio[si - 1] < prio) {
-				sorted_links[si] = sorted_links[si - 1];
-				sorted_prio[si] = sorted_prio[si - 1];
-				si--;
-			}
-			sorted_links[si] = i;
-			sorted_prio[si] = prio;
-			n_sorted++;
-		}
+	hostapd_mlo_prepare_link_order(hapd, sta, ies, ies_len,
+				       sorted_links, &n_sorted);
 
 	for (si = 0; si < n_sorted; si++) {
 		i = sorted_links[si];
@@ -8949,8 +9087,12 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			 * The TX link always counts as one accepted link, so
 			 * accepted_links is initialised to 1 above.
 			 */
-			if (hapd->conf->mld_max_links_per_sta &&
+			if (!disabled_rej &&
+			    hapd->conf->mld_max_links_per_sta &&
 			    accepted_links >= hapd->conf->mld_max_links_per_sta) {
+				if (range_rej && bss && bss->iface &&
+				    IS_2P4GHZ(bss->iface->freq))
+					abort_assoc = true;
 				wpa_printf(MSG_DEBUG,
 					   "MLD: link_id=%u rejected: max links (%u) reached",
 					   i, hapd->conf->mld_max_links_per_sta);
@@ -8977,12 +9119,12 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			}
 
 			/*
-			 * Attempt to set up the partner link.  On failure the
+			 * Attempt to set up the partner link. On failure the
 			 * link is already marked rejected inside
 			 * ieee802_11_ml_process_link() and -1 is returned.
-			 * Treat this as a soft per-link rejection: continue
-			 * processing remaining links and do NOT propagate the
-			 * error to the caller (the TX-link association stands).
+			 * Treat this as a soft per-link rejection for the enabled
+			 * rejection modes. The TX-link association remains active
+			 * with the failed partner link omitted.
 			 */
 			if (ieee80211_ml_process_link(bss, hapd, sta, link,
 						      ies, ies_len,
@@ -9005,13 +9147,22 @@ release_ref:
 		 * Must be called before wpa_release_link_auth_ref() because
 		 * that call clears link->wpa_auth.
 		 */
-		if (sta->wpa_sm && link->rejected)
+		if (sta->wpa_sm && link->rejected && !abort_assoc)
 			wpa_auth_set_ml_link_rejected(sta->wpa_sm, i, true);
 
 		if (link->rejected)
-			wpa_release_link_auth_ref(sta->wpa_sm, i, true);
+			wpa_release_link_auth_ref(sta->wpa_sm, i, !abort_assoc);
+
+		if (abort_assoc && link->rejected) {
+			/*
+			 * Keep the per-link failure profile, but do not continue
+			 * with a partially accepted MLD association.
+			 */
+			ret = -1;
+			link->rejected = false;
+			break;
+		}
 	}
-	} /* end band-priority block */
 #endif /* CONFIG_IEEE80211BE */
 
 	return ret;
@@ -11010,9 +11161,10 @@ static void handle_assoc(struct hostapd_data *hapd,
 	 *    issues with processing other non-Data Class 3 frames during this
 	 *    window.
 	 */
-	if (sta)
-		hostapd_process_assoc_ml_info(hapd, sta, pos, left, reassoc,
-					      resp, false, &set_beacon);
+	if (sta && hostapd_process_assoc_ml_info(hapd, sta, pos, left,
+						 reassoc, resp, false,
+						 &set_beacon))
+		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 
 	if (resp != WLAN_STATUS_SUCCESS)
 		wpa_auth_connection_fail_event(hapd->wpa_auth,

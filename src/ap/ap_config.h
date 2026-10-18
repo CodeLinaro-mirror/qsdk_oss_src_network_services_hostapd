@@ -465,6 +465,14 @@ struct uhr_params_update_config {
 /**
  * struct hostapd_bss_config - Per-BSS configuration
  */
+#ifdef CONFIG_IEEE80211BE
+enum mld_link_rej_mode {
+	ML_LINK_REJ_DISABLED = 0,
+	ML_LINK_REJ_RANGE,
+	ML_LINK_REJ_THROUGHPUT,
+};
+#endif /* CONFIG_IEEE80211BE */
+
 struct hostapd_bss_config {
 	char iface[IFNAMSIZ + 1];
 	char bridge[IFNAMSIZ + 1];
@@ -1347,8 +1355,9 @@ struct hostapd_bss_config {
 	u8 mld_min_links_per_sta;
 	/*
 	 * Link rejection mode when mld_max_links_per_sta cap is hit.
-	 * 0 = default: reject 2G first, keep 5G/6G (band-priority)
-	 * 1 = range:   never reject 2G, reject 5G first (qca-wifi MLO_LINK_REJ_RANGE)
+	 * 0 = disabled (ML_LINK_REJ_DISABLED) (default)
+	 * 1 = range (ML_LINK_REJ_RANGE)
+	 * 2 = throughput (ML_LINK_REJ_THROUGHPUT)
 	 */
 	u8 mld_link_rej_mode;
 

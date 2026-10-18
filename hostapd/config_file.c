@@ -6305,10 +6305,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "mld_link_rej_mode") == 0) {
 		int val = atoi(pos);
 
-		if (val < 0 || val > 1) {
+		if (val < ML_LINK_REJ_DISABLED ||
+		    val > ML_LINK_REJ_THROUGHPUT) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: Invalid mld_link_rej_mode %d (expected 0 or 1)",
-				   line, val);
+				   "Line %d: Invalid mld_link_rej_mode %d (expected %d..%d)",
+				   line, val, ML_LINK_REJ_DISABLED,
+				   ML_LINK_REJ_THROUGHPUT);
 			return 1;
 		}
 		bss->mld_link_rej_mode = val;
