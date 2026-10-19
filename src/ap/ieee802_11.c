@@ -11543,12 +11543,24 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR: Frame too short");
 		return;
 	}
-	
+
 	switch (type) {
 	case UHR_LINK_RECONFIG_TYPE_PREP:
+		if (!sta->smd_info.smd_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Drop ST Prep from non-SMD STA " MACSTR,
+				   MAC2STR(sta->addr));
+			return;
+		}
 		uhr_handle_st_prep_req(hapd, sta, (const u8 *) mgmt, len, smd_ctx);
 		break;
 	case UHR_LINK_RECONFIG_TYPE_EXECUTE:
+		if (!sta->smd_info.smd_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Drop ST Execute from non-SMD STA " MACSTR,
+				   MAC2STR(sta->addr));
+			return;
+		}
 		/*
 		 * Distinguish ST Execute via Target AP-MLD from ST Execute
 		 * via Serving AP-MLD by the frame's own Target AP MLD MAC
