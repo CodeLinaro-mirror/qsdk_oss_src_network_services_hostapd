@@ -1571,6 +1571,30 @@ int wpa_supplicant_reload_configuration(struct wpa_supplicant *wpa_s)
 	if (old_ap_scan != wpa_s->conf->ap_scan)
 		wpas_notify_ap_scan_changed(wpa_s);
 
+	/*
+	 * Cached valid_links was derived from the old freq_list; refresh it
+	 * now so links newly allowed by this reconfigure aren't stuck
+	 * excluded.
+	 */
+	{
+		struct wpa_bss *reparse_bss;
+
+		wpa_msg(wpa_s, MSG_INFO,
+			"QCN-MLO-RECONFIG-FIX: reparsing cached MLD BSS entries against reloaded freq_list");
+		dl_list_for_each(reparse_bss, &wpa_s->bss, struct wpa_bss,
+				 list) {
+			if (!is_zero_ether_addr(reparse_bss->mld_addr)) {
+				wpa_bss_parse_basic_ml_element(wpa_s,
+							       reparse_bss);
+				wpa_msg(wpa_s, MSG_INFO,
+					"QCN-MLO-RECONFIG-FIX: BSS " MACSTR
+					" reparsed, valid_links=0x%04x",
+					MAC2STR(reparse_bss->bssid),
+					reparse_bss->valid_links);
+			}
+		}
+	}
+
 	if (reconf_ctrl)
 		wpa_s->ctrl_iface = wpa_supplicant_ctrl_iface_init(wpa_s);
 
