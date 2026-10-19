@@ -12406,10 +12406,21 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 			   "cookie 0x%llx", no_ack ? " (no ACK)" : "",
 			   (long long unsigned int) cookie);
 
-		if (drv->nlmode == NL80211_IFTYPE_NAN_DATA || no_ack)
+		if (drv->nlmode == NL80211_IFTYPE_NAN_DATA || no_ack) {
 			drv->send_frame_cookie = (u64) -1;
-		else if (save_cookie)
+			drv->send_frame_cookie_is_action = false;
+		} else if (save_cookie) {
 			drv->send_frame_cookie = cookie;
+			if (buf_len >= sizeof(u16)) {
+				u16 frame_fc = WPA_GET_LE16(buf);
+
+				drv->send_frame_cookie_is_action =
+					WLAN_FC_GET_TYPE(frame_fc) == WLAN_FC_TYPE_MGMT &&
+					WLAN_FC_GET_STYPE(frame_fc) == WLAN_FC_STYPE_ACTION;
+			} else {
+				drv->send_frame_cookie_is_action = false;
+			}
+		}
 
 		/*
 		 * Store the cookie only in case there is a wait that needs to

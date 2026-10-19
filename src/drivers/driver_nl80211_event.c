@@ -2370,6 +2370,8 @@ static void mlme_event_mgmt_tx_status(struct i802_bss *bss,
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u16 fc = le_to_host16(hdr->frame_control);
 	u64 cookie_val = 0;
+	bool send_frame_cookie_match = false;
+	int send_frame_link_id = NL80211_DRV_LINK_ID_NA;
 
 	if (cookie)
 		cookie_val = nla_get_u64(cookie);
@@ -2394,6 +2396,12 @@ static void mlme_event_mgmt_tx_status(struct i802_bss *bss,
 	if (WLAN_FC_GET_TYPE(fc) != WLAN_FC_TYPE_MGMT)
 		return;
 
+	if (cookie && drv->send_frame_cookie != (u64) -1 &&
+	    cookie_val == drv->send_frame_cookie) {
+		send_frame_cookie_match = true;
+		send_frame_link_id = drv->send_frame_link_id;
+	}
+
 	if (!is_ap_interface(drv->nlmode) &&
 	    WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION) {
 		bool known = false;
@@ -2402,7 +2410,7 @@ static void mlme_event_mgmt_tx_status(struct i802_bss *bss,
 		if (!cookie)
 			return;
 
-		if (cookie_val == drv->send_frame_cookie) {
+		if (send_frame_cookie_match) {
 			known = true;
 			drv->send_frame_cookie = (u64) -1;
 		}
@@ -2440,6 +2448,11 @@ static void mlme_event_mgmt_tx_status(struct i802_bss *bss,
 			   !!ack);
 	}
 
+	if (send_frame_cookie_match) {
+		drv->send_frame_cookie = (u64) -1;
+		drv->send_frame_cookie_is_action = false;
+	}
+
 	os_memset(&event, 0, sizeof(event));
 	event.tx_status.type = WLAN_FC_GET_TYPE(fc);
 	event.tx_status.stype = WLAN_FC_GET_STYPE(fc);
@@ -2447,8 +2460,8 @@ static void mlme_event_mgmt_tx_status(struct i802_bss *bss,
 	event.tx_status.data = frame;
 	event.tx_status.data_len = len;
 	event.tx_status.ack = ack != NULL;
-	event.tx_status.link_id = cookie_val == drv->send_frame_cookie ?
-		drv->send_frame_link_id : NL80211_DRV_LINK_ID_NA;
+	event.tx_status.link_id = send_frame_cookie_match ?
+		send_frame_link_id : NL80211_DRV_LINK_ID_NA;
 	wpa_supplicant_event(bss->ctx, EVENT_TX_STATUS, &event);
 }
 
@@ -6017,8 +6030,14 @@ static void nl80211_frame_wait_cancel(struct wpa_driver_nl80211_data *drv,
 		   (long long unsigned int) cookie,
 		   match ? " (match)" : "",
 		   drv->send_frame_cookie == cookie ? " (match-saved)" : "");
-	if (drv->send_frame_cookie == cookie) {
+	if (drv->send_frame_cookie == cookie &&
+	    drv->send_frame_cookie_is_action) {
+		/* Preserve the Action cookie until delayed TX status is received. */
+		if (!match)
+			goto send_event;
+	} else if (drv->send_frame_cookie == cookie) {
 		drv->send_frame_cookie = (u64) -1;
+		drv->send_frame_cookie_is_action = false;
 		if (!match)
 			goto send_event;
 	}
