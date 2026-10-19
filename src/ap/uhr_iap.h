@@ -65,6 +65,8 @@ struct uhr_iap_security_ctx {
        u8 wpa_ie_len;
        u8 rsnxe_len;
 
+       u8 auth_alg;
+
 } __attribute__((packed));
 
 /**
