@@ -11284,6 +11284,36 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 }
 
 
+/*
+ * wpas_eppke_ap_rsnx_capab - Check an AP RSNX capability for EPPKE
+ * @wpa_s: wpa_supplicant data
+ * @bss: AP BSS data
+ * @capab: RSNX capability bit
+ *
+ * The Security Profile Extended RSN Capabilities field is authoritative when
+ * the AP advertises a Security Profile element. Otherwise, use the baseline
+ * RSNXE from the Beacon or Probe Response.
+ */
+bool wpas_eppke_ap_rsnx_capab(struct wpa_supplicant *wpa_s,
+			      struct wpa_bss *bss, unsigned int capab)
+{
+	if (wpas_security_profile_active(wpa_s)) {
+		const u8 *sp_rsnx;
+		size_t sp_rsnx_len;
+		const u8 *sp = wpa_bss_get_ie_ext(
+			bss, WLAN_EID_EXT_SECURITY_PROFILE);
+
+		sp_rsnx = security_profile_ie_get_rsnx(sp, &sp_rsnx_len);
+		if (sp)
+			return sp_rsnx && ieee802_11_rsnx_capab_len(
+				sp_rsnx, sp_rsnx_len, capab);
+	}
+
+	return ieee802_11_rsnx_capab(
+		wpa_bss_get_rsnxe(wpa_s, bss, NULL, false), capab);
+}
+
+
 void wpas_update_dfs_ap_info(struct wpa_supplicant *wpa_s, int freq,
 			     enum chan_width ap_ch_width,
 			     bool disconnect_evt)

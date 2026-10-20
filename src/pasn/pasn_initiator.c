@@ -932,6 +932,10 @@ void wpa_pasn_reset(struct pasn_data *pasn)
 	pasn->rsn_ie_len = 0;
 	os_free(pasn->rsnxe_ie);
 	pasn->rsnxe_ie = NULL;
+#ifdef CONFIG_IEEE80211BN
+	os_memset(pasn->smd_identifier, 0, ETH_ALEN);
+	pasn->smd_capable = false;
+#endif /* CONFIG_IEEE80211BN */
 	pasn->custom_pmkid_valid = false;
 
 	if (pasn->extra_ies) {
@@ -1366,6 +1370,7 @@ int wpas_parse_pasn_frame(struct pasn_data *pasn, u16 auth_type,
 	u8 mic_len;
 	int ret, inc_y;
 	u8 *copy = NULL;
+	const u8 *smd_identifier = NULL;
 	size_t mic_offset, copy_len;
 
 	if (auth_transaction != pasn->trans_seq + 1) {
@@ -1389,6 +1394,13 @@ int wpas_parse_pasn_frame(struct pasn_data *pasn, u16 auth_type,
 			   "PASN: Failed parsing Authentication frame");
 		goto fail;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (pasn->auth_alg == WLAN_AUTH_EPPKE &&
+	    pasn->smd_capable &&
+	    !is_zero_ether_addr(pasn->smd_identifier))
+		smd_identifier = pasn->smd_identifier;
+#endif /* CONFIG_IEEE80211BN */
 
 	wpas_pasn_store_ap_supported_groups(pasn, &elems);
 
@@ -1535,7 +1547,7 @@ int wpas_parse_pasn_frame(struct pasn_data *pasn, u16 auth_type,
 			      &pasn->ptk, pasn->akmp, pasn->cipher,
 			      pasn->kdk_len, pasn->kek_len, &pasn->hash_alg,
 			      pasn->auth_alg == WLAN_AUTH_EPPKE,
-			      NULL);
+			      smd_identifier);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		goto fail;

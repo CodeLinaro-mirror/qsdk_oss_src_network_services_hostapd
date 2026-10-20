@@ -703,6 +703,12 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	 */
 	wpa_pasn_reset(pasn);
 
+#ifdef CONFIG_IEEE80211BN
+	os_memcpy(pasn->smd_identifier, bss->smd_identifier, ETH_ALEN);
+	pasn->smd_capable = wpas_eppke_ap_rsnx_capab(
+		wpa_s, bss, WLAN_RSNX_CAPAB_SMD);
+#endif /* CONFIG_IEEE80211BN */
+
 	/* As per IEEE P802.11-REVmf/D2.1, 12.13.5, when SAE is wrapped within
 	 * PASN authentication, both shall use the same finite cyclic group.
 	 * SAE-level group rejection validation is not required.
