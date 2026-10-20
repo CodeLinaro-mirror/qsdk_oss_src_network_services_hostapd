@@ -1610,7 +1610,8 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 #ifdef CONFIG_IEEE80211BN
 	/* Suppress SMD bit in base RSNXE when SP IE is activated;
 	 * SMD support is indicated via SP IE's RSNXE field instead */
-	if (hapd->conf->smd.enabled)
+	if (hapd->conf->smd.enabled &&
+	    (capab_mask & BIT_ULL(WLAN_RSNX_CAPAB_SMD)))
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
 #endif /* CONFIG_IEEE80211BN */
 
