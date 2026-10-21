@@ -587,29 +587,6 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 		if (hapd->iconf->channel_usage)
 			*pos |= 0x01; /* Bit 104 - Channel Usage support */
 		break;
-	case 15: /* Bits 120-127 */
-		if (hapd->iface->current_mode) {
-			const struct he_capabilities *hw_he =
-				&hapd->iface->current_mode->he_capab[IEEE80211_MODE_AP];
-#ifdef CONFIG_IEEE80211BE
-			const struct eht_capabilities *hw_eht =
-				&hapd->iface->current_mode->eht_capab[IEEE80211_MODE_AP];
-#endif /* CONFIG_IEEE80211BE */
-
-			if ((hapd->iface->current_mode->vht_capab &
-			     VHT_CAP_SU_BEAMFORMER_CAPABLE) ||
-			    (hw_he->he_supported &&
-			     (hw_he->phy_cap[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] &
-			      HE_PHYCAP_SU_BEAMFORMER_CAPAB))
-#ifdef CONFIG_IEEE80211BE
-			    || (hw_eht->eht_supported &&
-				(hw_eht->phy_cap[EHT_PHYCAP_SU_BEAMFORMER_IDX] &
-				 EHT_PHYCAP_SU_BEAMFORMER))
-#endif /* CONFIG_IEEE80211BE */
-			   )
-				*pos |= 0x01; /* B120 - WLAN_EXT_CAPAB_NDP_PREAMBLE_CLARIFIED */
-		}
-		break;
 	}
 }
 
