@@ -12839,6 +12839,10 @@ static int get_channel_width(struct nl_msg *msg, void *arg)
 	sig_change->center_frq2 = -1;
 	sig_change->chanwidth = CHAN_WIDTH_UNKNOWN;
 
+	if (tb[NL80211_ATTR_WIPHY_FREQ])
+		sig_change->frequency =
+			nla_get_u32(tb[NL80211_ATTR_WIPHY_FREQ]);
+
 	if (tb[NL80211_ATTR_CHANNEL_WIDTH]) {
 		sig_change->chanwidth = convert2width(
 			nla_get_u32(tb[NL80211_ATTR_CHANNEL_WIDTH]));
@@ -12975,6 +12979,10 @@ static int get_links_channel_width(struct nl_msg *msg, void *arg)
 		link_id = nla_get_u8(tb2[NL80211_ATTR_MLO_LINK_ID]);
 		if (link_id >= MAX_NUM_MLD_LINKS)
 			continue;
+
+		if (tb2[NL80211_ATTR_WIPHY_FREQ])
+			mlo_sig->links[link_id].frequency =
+				nla_get_u32(tb2[NL80211_ATTR_WIPHY_FREQ]);
 
 		if (!tb2[NL80211_ATTR_CHANNEL_WIDTH])
 			continue;
