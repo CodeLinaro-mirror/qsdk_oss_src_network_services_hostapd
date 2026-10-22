@@ -568,4 +568,8 @@ struct hostapd_multi_mbssid {
 	struct hostapd_multi_mbssid_group **group;
 };
 
+#ifdef CONFIG_IEEE80211BN
+bool mapc_action_frame(u8 action_code);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /* IEEE802_11_COMMON_H */
