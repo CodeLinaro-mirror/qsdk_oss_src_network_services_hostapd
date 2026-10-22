@@ -8271,6 +8271,11 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 
 	wpa_printf(MSG_DEBUG, "nl80211: %s STA " MACSTR,
 		   cmd_string, MAC2STR(params->addr));
+#ifdef CONFIG_IEEE80211BN
+	if (params->smd_sta)
+		wpa_printf(MSG_DEBUG, "nl80211: sta_add " MACSTR " is SMD STA",
+			   MAC2STR(params->addr));
+#endif /* CONFIG_IEEE80211BN */
 	msg = nl80211_bss_msg(bss, 0, cmd);
 	if (!msg)
 		goto fail;
