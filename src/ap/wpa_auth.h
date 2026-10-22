@@ -236,6 +236,7 @@ struct wpa_auth_config {
 	int disable_gtk;
 #ifdef CONFIG_QCN_EXTN
 	int skip_gtk_install;
+	int skip_bigtk_install;
 #endif /* CONFIG_QCN_EXTN */
 	int ap_mlme;
 #ifdef CONFIG_TESTING_OPTIONS
