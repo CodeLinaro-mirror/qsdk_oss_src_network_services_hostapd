@@ -327,6 +327,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	 */
 	bss->uhr_params_update.adv_notification_interval = 10;
 	bss->uhr_params_update.update_in_tim_interval = 20;
+	bss->uhr_params_update.post_notification_interval = 5;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* This max size includes wmm and user configured vendor elements */

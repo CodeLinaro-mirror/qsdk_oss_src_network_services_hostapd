@@ -6830,6 +6830,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->uhr_params_update.update_in_tim_interval = (u8) val;
+	} else if (os_strcmp(buf, "uhr_post_notification_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_post_notification_interval must be 0-7",
+				   line);
+			return 1;
+		}
+		bss->uhr_params_update.post_notification_interval = (u8) val;
 	} else if (os_strcmp(buf, "uhr_adv_notification_duration_ms") == 0) {
 		int val = atoi(pos);
 		if (val <= 0 || (u32)val > UINT32_MAX / 1000) {

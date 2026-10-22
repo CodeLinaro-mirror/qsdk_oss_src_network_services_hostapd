@@ -446,6 +446,7 @@ struct hostapd_uhr_npca_params {
 struct uhr_params_update_config {
 	u8 adv_notification_interval;
 	u8 update_in_tim_interval;
+	u8 post_notification_interval;
 	/*
 	 * MLD-level desired advance-notification duration in milliseconds.
 	 * When non-zero, adv_notification_interval is computed from this
