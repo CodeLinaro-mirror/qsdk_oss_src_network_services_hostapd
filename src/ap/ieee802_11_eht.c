@@ -2662,7 +2662,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 			link->valid = true;
 
 			os_memcpy(link->local_addr, lhapd->own_addr, ETH_ALEN);
-			ieee80211_ml_build_assoc_resp(lhapd, NULL, assoc_sta, link);
+			ieee80211_ml_build_assoc_resp(lhapd, NULL, assoc_sta, link, false);
 		}
 		/* TODO: Basic MLE is not supposed to include BPCC in Link
 		 * Reconfiguration Response, but mac80211 implementation for

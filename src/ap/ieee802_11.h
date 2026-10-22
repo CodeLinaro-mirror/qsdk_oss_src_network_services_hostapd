@@ -661,7 +661,8 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 				   struct hostapd_data *phapd,
 				   struct sta_info *sta,
-				   struct mld_link_info *link);
+				   struct mld_link_info *link,
+				   bool smd_st_resp);
 
 void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 					struct sta_info *sta,
