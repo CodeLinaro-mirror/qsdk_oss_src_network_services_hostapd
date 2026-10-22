@@ -112,22 +112,28 @@ struct hostapd_bcn_report_entry *
 hostapd_bcn_report_get(struct hostapd_data *hapd, const u8 *bssid, size_t len)
 {
 	struct hostapd_bcn_report_entry *bcn_report;
-	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+	size_t subelem_len;
+
+	if (len < WLAN_BEACON_REPORT_FIXED_LEN)
+		return NULL;
+
+	subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
 
 	dl_list_for_each(bcn_report, &hapd->bcn_report_db,
 			 struct hostapd_bcn_report_entry,
 			 list) {
 		if (ether_addr_equal(bssid, bcn_report->bssid)) {
-			if (bcn_report->subelem &&
-			    (bcn_report->subelem_len != subelem_len)) {
+			if (bcn_report->subelem_len != subelem_len) {
 				os_free(bcn_report->subelem);
-				if (subelem_len)
-					bcn_report->subelem = os_zalloc(subelem_len);
-			} else if (!bcn_report->subelem && subelem_len)
+				bcn_report->subelem = NULL;
+				bcn_report->subelem_len = 0;
+			}
+			if (!bcn_report->subelem && subelem_len)
 				bcn_report->subelem = os_zalloc(subelem_len);
 			if (!bcn_report->subelem && subelem_len) {
+				dl_list_del(&bcn_report->list);
 				os_free(bcn_report);
-				bcn_report = NULL;
+				return NULL;
 			}
 			return bcn_report;
 		}
@@ -206,7 +212,12 @@ static struct hostapd_bcn_report_entry *
 hostapd_bcn_report_alloc(struct hostapd_data *hapd, size_t len)
 {
 	struct hostapd_bcn_report_entry *bcn_report;
-	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+	size_t subelem_len;
+
+	if (len < WLAN_BEACON_REPORT_FIXED_LEN)
+		return NULL;
+
+	subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
 
 	bcn_report = os_zalloc(sizeof(struct hostapd_bcn_report_entry));
 	if (!bcn_report)
@@ -231,11 +242,13 @@ hostapd_bcn_report_add(struct hostapd_data *hapd,
 		       size_t len)
 {
 	struct hostapd_bcn_report_entry *entry;
-	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+	size_t subelem_len;
 	char subelem[256] = {'\0'};
 
-	if (!hapd || !bcn_report)
+	if (!hapd || !bcn_report || len < WLAN_BEACON_REPORT_FIXED_LEN)
 		return -1;
+
+	subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
 
 	entry = hostapd_bcn_report_get(hapd, bcn_report->bssid, len);
 	if (!entry)
@@ -259,6 +272,8 @@ hostapd_bcn_report_add(struct hostapd_data *hapd,
 				subelem_len);
 		os_memcpy(entry->subelem, bcn_report->variable, subelem_len);
 		entry->subelem_len = subelem_len;
+	} else {
+		entry->subelem_len = 0;
 	}
 
 	return 0;
