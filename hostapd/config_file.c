@@ -1194,6 +1194,10 @@ int hostapd_config_read_rxkh_file(struct hostapd_bss_config *conf,
 static int hostapd_config_ht_capab(struct hostapd_config *conf,
 				   const char *capab)
 {
+	/* Preserve the SMPS mode, which is not parsed from ht_capab. */
+	conf->ht_capab &= HT_CAP_INFO_SMPS_DISABLED;
+	conf->ht40_plus_minus_allowed = 0;
+
 	if (os_strstr(capab, "[LDPC]"))
 		conf->ht_capab |= HT_CAP_INFO_LDPC_CODING_CAP;
 	if (os_strstr(capab, "[HT40-]")) {
@@ -1249,6 +1253,8 @@ static int hostapd_config_ht_capab(struct hostapd_config *conf,
 static int hostapd_config_vht_capab(struct hostapd_config *conf,
 				    const char *capab)
 {
+	conf->vht_capab = 0;
+
 	if (os_strstr(capab, "[MAX-MPDU-7991]"))
 		conf->vht_capab |= VHT_CAP_MAX_MPDU_LENGTH_7991;
 	if (os_strstr(capab, "[MAX-MPDU-11454]"))
