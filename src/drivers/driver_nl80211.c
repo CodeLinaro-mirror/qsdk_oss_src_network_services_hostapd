@@ -13156,6 +13156,11 @@ static void nl80211_global_deinit(void *priv)
 	struct nl80211_global *global = priv;
 	if (global == NULL)
 		return;
+
+	/* Clear the NL_CB_VALID callback before any teardown. */
+	if (global->nl_cb)
+		nl_cb_set(global->nl_cb, NL_CB_VALID, NL_CB_DEFAULT, NULL, NULL);
+
 	if (!dl_list_empty(&global->interfaces)) {
 		wpa_printf(MSG_ERROR, "nl80211: %u interface(s) remain at "
 			   "nl80211_global_deinit",
