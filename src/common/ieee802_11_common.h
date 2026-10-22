@@ -537,4 +537,8 @@ struct security_profile_entry_ap {
 	bool unauth_eppke;
 };
 
+#ifdef CONFIG_IEEE80211BN
+bool mapc_action_frame(u8 action_code);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /* IEEE802_11_COMMON_H */
