@@ -6879,11 +6879,12 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd,
 				multi_mbssid->num_mbssid_groups++;
 
 #ifdef CONFIG_QCN_EXTN
-			if (is_mesh_vap)
-				hostapd_mesh_mbssid_reserve_group_extn(multi_mbssid,
-									max_bssid_indicator,
-									&group_index,
-									&prefix_mask);
+			if (is_mesh_vap &&
+			    hostapd_mesh_mbssid_reserve_group_extn(multi_mbssid,
+								   max_bssid_indicator,
+								   &group_index,
+								   &prefix_mask))
+				return -1;
 #endif
 			if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
 				wpa_printf(MSG_ERROR,
