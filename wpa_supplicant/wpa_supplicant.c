@@ -8769,9 +8769,23 @@ int radio_add_work(struct wpa_supplicant *wpa_s, unsigned int freq,
 		   void (*cb)(struct wpa_radio_work *work, int deinit),
 		   void *ctx)
 {
+#ifdef RDK_ONEWIFI
+	struct wpa_radio *radio;
+#else
 	struct wpa_radio *radio = wpa_s->radio;
+#endif /* RDK_ONEWIFI */
 	struct wpa_radio_work *work;
 	int was_empty;
+
+#ifdef RDK_ONEWIFI
+	if (!wpa_s || !wpa_s->radio) {
+		if (wpa_s)
+			wpa_msg(wpa_s, MSG_ERROR,
+				"radio_add_work: no native radio context");
+		return -1;
+	}
+	radio = wpa_s->radio;
+#endif /* RDK_ONEWIFI */
 
 	work = os_zalloc(sizeof(*work));
 	if (work == NULL)

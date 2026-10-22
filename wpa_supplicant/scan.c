@@ -4228,7 +4228,17 @@ int wpas_mac_addr_rand_scan_get_mask(struct wpa_supplicant *wpa_s,
 int wpas_abort_ongoing_scan(struct wpa_supplicant *wpa_s)
 {
 	struct wpa_radio_work *work;
+#ifdef RDK_ONEWIFI
+	struct wpa_radio *radio;
+
+	/* OneWifi does not create the native radio-work context. */
+	if (!wpa_s || !wpa_s->radio)
+		return -1;
+
+	radio = wpa_s->radio;
+#else
 	struct wpa_radio *radio = wpa_s->radio;
+#endif /* RDK_ONEWIFI */
 
 	dl_list_for_each(work, &radio->work, struct wpa_radio_work, list) {
 		if (work->wpa_s != wpa_s || !work->started ||

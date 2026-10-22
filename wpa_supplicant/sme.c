@@ -2018,7 +2018,12 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 		radio_remove_works(wpa_s, "sme-connect", 0);
 	}
 
-	wpas_abort_ongoing_scan(wpa_s);
+#ifdef RDK_ONEWIFI
+	/* OneWifi owns scan scheduling when the native radio-work queue is not
+	 * initialized. Avoid entering the native scan-abort path in that case. */
+	if (wpa_s->radio)
+#endif /* RDK_ONEWIFI */
+		wpas_abort_ongoing_scan(wpa_s);
 
 	cwork = os_zalloc(sizeof(*cwork));
 	if (cwork == NULL)
@@ -2098,9 +2103,25 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 				       wpa_s, NULL);
 	} else {
 #endif
-		if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
-				   sme_auth_start_cb, cwork) < 0)
+#ifdef RDK_ONEWIFI
+		if (!wpa_s->radio) {
+			int ret;
+
+			/* OneWifi does not use the native radio-work scheduler. The
+			 * RDK SME path is already serialized by OneWifi/HAL, so invoke
+			 * the authentication operation directly. */
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"SME: OneWifi direct authentication without radio work");
+			ret = sme_send_authentication(wpa_s, bss, ssid, 1);
 			wpas_connect_work_free(cwork);
+			if (ret < 0)
+				wpa_msg(wpa_s, MSG_ERROR,
+					"SME: OneWifi direct authentication failed");
+		} else
+#endif /* RDK_ONEWIFI */
+			if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
+					   sme_auth_start_cb, cwork) < 0)
+				wpas_connect_work_free(cwork);
 #ifdef CONFIG_QCN_EXTN
 	}
 #endif
