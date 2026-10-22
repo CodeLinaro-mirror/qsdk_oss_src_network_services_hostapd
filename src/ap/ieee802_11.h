@@ -595,6 +595,12 @@ int hostapd_npca_primary_chan_validate(struct hostapd_data *hapd,
 				       const char *val_str);
 u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 				 const struct hostapd_uhr_npca_params *npca);
+void npca_params_from_mode(struct hostapd_uhr_npca_params *npca,
+			   const struct uhr_npca_info *info);
+int hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd);
+int hostapd_validate_uhr_cu_state(struct hostapd_data *hapd);
+int hostapd_trigger_npca_ecu(struct hostapd_data *hapd,
+			     struct hostapd_uhr_npca_params *npca);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,
