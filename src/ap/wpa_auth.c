@@ -9228,8 +9228,8 @@ int wpa_auth_reconfig_wpa_auth_sm(struct hostapd_data *rhapd,
 	struct wpa_authenticator *wpa_auth = (struct wpa_authenticator *)data;
 
 	if (lsta->wpa_sm) {
-		lsta->wpa_sm->wpa_auth = wpa_auth;
 		wpa_group_put_sm(lsta->wpa_sm);
+		lsta->wpa_sm->wpa_auth = wpa_auth;
 		lsta->wpa_sm->group = wpa_auth->group;
 		wpa_group_get_sm(lsta->wpa_sm);
 	}
