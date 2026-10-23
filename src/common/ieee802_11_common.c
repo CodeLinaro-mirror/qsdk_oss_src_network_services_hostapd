@@ -478,6 +478,7 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 			break;
 		elems->security_profile_ie = pos - 1; /* include ext_id byte */
 		elems->security_profile_ie_len = elen + 1;
+		break;
 	case WLAN_EID_EXT_SMD:
 		if (elen < (ETH_ALEN + 1 + sizeof(u8))) {
 			if (show_errors) {
