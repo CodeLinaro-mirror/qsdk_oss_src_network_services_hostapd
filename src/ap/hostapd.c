@@ -1508,6 +1508,59 @@ non_repurpose_link_remove:
 #endif /* CONFIG_IEEE80211BE */
 
 
+static void hostapd_ap_state_cache_update(struct hostapd_iface *iface)
+{
+	char path[128];
+	bool running = false;
+	size_t i;
+	int radio = -1;
+	int ret;
+	FILE *f;
+
+	if (!iface || !iface->phy[0] || !iface->conf || !iface->bss ||
+	    !iface->bss[0] || !iface->bss[0]->conf)
+		return;
+
+	if (iface->current_hw_info)
+		radio = iface->current_hw_info->hw_idx;
+	else
+		radio = iface->conf->radio_idx;
+	if (radio < 0)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i] && iface->bss[i]->started) {
+			running = true;
+			break;
+		}
+	}
+
+	ret = os_snprintf(path, sizeof(path),
+			  "/var/run/hostapd/ap_state_%s_%d",
+			  iface->phy, radio);
+	if (os_snprintf_error(sizeof(path), ret))
+		return;
+
+	if (running) {
+		f = fopen(path, "w");
+		if (!f) {
+			wpa_printf(MSG_ERROR,
+				   "hostapd: failed to update AP state cache %s: %s",
+				   path, strerror(errno));
+			return;
+		}
+		fclose(f);
+		return;
+	}
+
+	if (unlink(path) < 0 && errno != ENOENT) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd: failed to clear AP state cache %s: %s",
+			   path, strerror(errno));
+	}
+}
+
+
 void hostapd_free_hapd_data(struct hostapd_data *hapd)
 {
 	const bool skip_unstarted_bss_cleanup = !hapd->started;
@@ -1550,6 +1603,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	hapd->started = 0;
 	hapd->beacon_set_done = 0;
+	hostapd_ap_state_cache_update(hapd->iface);
 
 #ifdef CONFIG_MQTT
 	/*
@@ -3261,6 +3315,7 @@ setup_mld:
 		return -1;
 
 	atf_offload_set_ssid_sched_policy(hapd);
+	hostapd_ap_state_cache_update(hapd->iface);
 	return 0;
 }
 
