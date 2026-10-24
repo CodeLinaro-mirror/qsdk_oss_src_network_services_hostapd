@@ -825,6 +825,182 @@ pasn_resp_find_pmksa(struct pasn_data *pasn, const struct ieee80211_mgmt *mgmt,
 	return pmksa_cache_auth_get(pasn->pmksa, peer_addr, pmkid);
 }
 
+#ifdef CONFIG_IEEE80211BN
+
+/*
+ * Check SMD bit 37 in an Extended RSN Capabilities field.
+ *
+ * Return:
+ *   0  SMD bit is not set
+ *   1  SMD bit is set
+ *  -1  malformed RSNXE field
+ */
+static int security_profile_rsnxe_has_smd(const u8 *rsnxe,
+					  size_t rsnxe_len)
+{
+	return ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+					 WLAN_RSNX_CAPAB_SMD) ? 1 : 0;
+}
+
+
+/*
+ * Locate the Extended RSN Capabilities field in the Security Profile.
+ *
+ * sp_ie points to the Security Profile element payload as stored by the
+ * local parser. In this tree, the payload includes the Extension ID.
+ *
+ * Security Profile payload:
+ *
+ *   Octet 0: Extension ID                 1 octet
+ *   Octet 1: Reduced RSN Capabilities     1 octet
+ *   Octet 2: Security Profile Indication  1 octet
+ *   Octet 3: Security Profile Bitmap      N octets
+ *   Remaining: Vendor Specific Profile List
+ *   Remaining: Extended RSN Capabilities
+ *
+ * Security Profile Indication:
+ *
+ *   bits 0..3: Number of octets in bitmap, N
+ *   bits 4..7: Number of vendor-specific profiles, M
+ *
+ * Return:
+ *   0  success
+ *  -1  malformed Security Profile
+ */
+static int security_profile_get_rsnxe(const u8 *sp_ie, size_t sp_len,
+				      const u8 **rsnxe,
+				      size_t *rsnxe_len)
+{
+	const u8 *pos;
+	const u8 *end;
+	u8 indication;
+	u8 n;
+	u8 m;
+	size_t field_len;
+	unsigned int i;
+
+	if (!sp_ie || !rsnxe || !rsnxe_len || sp_len < 3)
+		return -1;
+
+	end = sp_ie + sp_len;
+
+	/* Security Profile payload:
+	 *
+	 *   [0]       Extension ID
+	 *   [1]       Reduced RSN Capabilities
+	 *   [2]       Security Profile Indication
+	 *   [3..]     Security Profile Bitmap
+	 */
+	indication = sp_ie[2];
+	n = indication & 0x0f;
+	m = indication >> 4;
+
+	pos = sp_ie + 3;
+
+	if ((size_t) (end - pos) < n)
+		return -1;
+
+	pos += n;
+
+	for (i = 0; i < m; i++) {
+		if ((size_t) (end - pos) < 4)
+			return -1;
+
+		pos += 4;
+
+		if ((size_t) (end - pos) < 1)
+			return -1;
+
+		field_len = (pos[0] & 0x0f) + 1;
+
+		if (field_len > (size_t) (end - pos))
+			return -1;
+
+		pos += field_len;
+	}
+
+	if ((size_t) (end - pos) < 1)
+		return -1;
+
+	field_len = (pos[0] & 0x0f) + 1;
+
+	if (field_len > (size_t) (end - pos))
+		return -1;
+
+	*rsnxe = pos;
+	*rsnxe_len = field_len;
+
+	return 0;
+}
+
+/*
+ * Validate the peer SMD indication and compare the standalone RSNXE
+ * with the RSNXE carried in the Security Profile.
+ *
+ * Return:
+ *   0  RSNXE is valid and SMD is not set
+ *   1  RSNXE is valid and SMD is set
+ *  -1  standalone RSNXE and Security Profile RSNXE differ
+ */
+static int pasn_validate_peer_smd(const struct ieee802_11_elems *elems)
+{
+	const u8 *profile_rsnxe;
+	size_t profile_rsnxe_len;
+	int standalone_present;
+	int profile_present;
+	int standalone_smd = 0;
+	int ret;
+
+	if (!elems)
+		return -1;
+
+	standalone_present = elems->rsnxe && elems->rsnxe_len;
+	profile_present = elems->security_profile_ie && elems->security_profile_ie_len;
+
+	if (standalone_present) {
+		standalone_smd =
+			security_profile_rsnxe_has_smd(elems->rsnxe,
+						       elems->rsnxe_len);
+		if (standalone_smd < 0)
+			return -1;
+	}
+
+	if (!profile_present)
+		return standalone_smd;
+
+	/* Locate the Extended RSN Capabilities field in the Security
+	 * Profile.
+	 */
+	ret = security_profile_get_rsnxe(elems->security_profile_ie,
+					 elems->security_profile_ie_len,
+					 &profile_rsnxe,
+					 &profile_rsnxe_len);
+	if (ret < 0)
+		return -1;
+
+	if (elems->rsnxe_len != profile_rsnxe_len ||
+	    os_memcmp(elems->rsnxe, profile_rsnxe,
+		      elems->rsnxe_len) != 0) {
+		wpa_printf(MSG_DEBUG,
+			   "PASN: standalone RSNXE and Security "
+			   "Profile RSNXE differ");
+
+		wpa_hexdump(MSG_DEBUG,
+			    "PASN: standalone RSNXE",
+			    elems->rsnxe,
+			    elems->rsnxe_len);
+
+		wpa_hexdump(MSG_DEBUG,
+			    "PASN: Security Profile RSNXE",
+			    profile_rsnxe,
+			    profile_rsnxe_len);
+
+		return -1;
+	}
+
+	return 1;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 int handle_auth_pasn_1(struct pasn_data *pasn,
 		       const u8 *own_addr, const u8 *peer_addr,
@@ -868,19 +1044,36 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 		goto send_resp;
 	}
 #ifdef CONFIG_IEEE80211BN
-	/* Only include the SMD Identifier in PTK derivation if the peer
-	 * actually advertised SMD support via RSNXE bit 37; otherwise the
-	 * AP and STA would derive mismatching PTKs. */
+	int peer_smd;
+
+	peer_smd = pasn_validate_peer_smd(&elems);
+
+	if (peer_smd == -1) {
+		wpa_printf(MSG_ERROR,
+			   "PASN: malformed RSNXE or Security Profile "
+			   "from peer " MACSTR,
+			   MAC2STR(peer_addr));
+		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		goto send_resp;
+	}
+
 	if (!is_zero_ether_addr(hapd->conf->smd.smd_identifier)) {
-		if (ieee802_11_rsnx_capab_len(elems.rsnxe, elems.rsnxe_len,
-					      WLAN_RSNX_CAPAB_SMD)) {
-			smd_identifier = hapd->conf->smd.smd_identifier;
+		if (peer_smd) {
+			smd_identifier =
+				hapd->conf->smd.smd_identifier;
+
+			wpa_printf(MSG_DEBUG,
+				   "PASN: peer " MACSTR
+				   " advertised SMD; including SMD "
+				   "Identifier in PTK derivation",
+				   MAC2STR(peer_addr));
 		} else {
 			wpa_printf(MSG_ERROR,
 				   "PASN: SMD configured (ID=" MACSTR
 				   ") but peer " MACSTR
-				   " did not advertise RSNXE SMD bit - "
-				   "excluding SMD Identifier from PTK derivation",
+				   " did not advertise SMD bit 37; "
+				   "excluding SMD Identifier from PTK "
+				   "derivation",
 				   MAC2STR(hapd->conf->smd.smd_identifier),
 				   MAC2STR(peer_addr));
 		}
