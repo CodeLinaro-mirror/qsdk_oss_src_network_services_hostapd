@@ -13093,6 +13093,128 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 
 	return 0;
 }
+
+
+static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
+				       char *cmd)
+{
+	int global_enable;
+	char *pos, *token;
+	struct npca_link_config links[MAX_NUM_MLD_LINKS];
+	int num_links = 0;
+	int i;
+
+	pos = cmd;
+	global_enable = atoi(pos);
+
+	while (*pos && !isspace((unsigned char) *pos))
+		pos++;
+	while (*pos && isspace((unsigned char) *pos))
+		pos++;
+
+	if (!wpa_s->valid_links) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: no MLO links associated, cannot apply");
+		return -1;
+	}
+
+	for_each_link(wpa_s->valid_links, i) {
+		struct hostapd_hw_modes *mode;
+
+		mode = get_mode_with_freq(wpa_s->hw.modes, wpa_s->hw.num_modes,
+					  wpa_s->links[i].freq);
+		if (!mode) {
+			wpa_printf(MSG_DEBUG,
+				   "NPCA: no hw mode for link %d freq %u",
+				   i, wpa_s->links[i].freq);
+			continue;
+		}
+
+		if (!mode->npca_info[IEEE80211_MODE_INFRA].npca_supported) {
+			wpa_printf(MSG_DEBUG,
+				   "NPCA: link %d does not support NPCA", i);
+			continue;
+		}
+
+		links[num_links].link_id = i;
+		links[num_links].npca_enable = !!global_enable;
+		links[num_links].npca_switch_delay = 0;
+		links[num_links].npca_switchback_delay = 0;
+		num_links++;
+	}
+
+	if (num_links == 0) {
+		wpa_printf(MSG_DEBUG, "NPCA: no NPCA-capable links found");
+		return -1;
+	}
+
+	token = pos;
+	while (*token) {
+		int link_id = -1, sw_delay = 0, swb_delay = 0;
+		char *next;
+
+		while (*token && isspace((unsigned char) *token))
+			token++;
+		if (!*token)
+			break;
+
+		if (os_strncmp(token, "link_id=", 8) == 0) {
+			link_id = atoi(token + 8);
+			next = token + 8;
+			while (*next && !isspace((unsigned char) *next))
+				next++;
+			token = next;
+
+			while (*token) {
+				while (*token && isspace((unsigned char) *token))
+					token++;
+				if (!*token)
+					break;
+				if (os_strncmp(token, "switch_delay=", 13) == 0) {
+					sw_delay = atoi(token + 13);
+					next = token + 13;
+					while (*next &&
+					       !isspace((unsigned char) *next))
+						next++;
+					token = next;
+				} else if (os_strncmp(token, "switchback_delay=",
+						      17) == 0) {
+					swb_delay = atoi(token + 17);
+					next = token + 17;
+					while (*next &&
+					       !isspace((unsigned char) *next))
+						next++;
+					token = next;
+				} else {
+					break;
+				}
+			}
+
+			if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
+				for (i = 0; i < num_links; i++) {
+					if (links[i].link_id == link_id) {
+						links[i].npca_enable =
+							!!global_enable;
+						links[i].npca_switch_delay =
+							(u8) sw_delay;
+						links[i].npca_switchback_delay =
+							(u8) swb_delay;
+						break;
+					}
+				}
+			}
+		} else {
+			while (*token && !isspace((unsigned char) *token))
+				token++;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "NPCA: sending uhr_mode_update for %d link(s), global_enable=%d",
+		   num_links, global_enable);
+
+	return wpa_drv_uhr_mode_update(wpa_s, links, num_links);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -15157,6 +15279,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
 		reply_len = wpas_ctrl_iface_epcs(wpa_s, buf + 5, reply,
 						  reply_size);
+	} else if (os_strncmp(buf, "NPCA ", 5) == 0) {
+		if (wpas_ctrl_iface_npca_enable(wpa_s, buf + 5) < 0)
+			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	} else if (os_strcmp(buf, "GET_FREQ_LIST") == 0) {
