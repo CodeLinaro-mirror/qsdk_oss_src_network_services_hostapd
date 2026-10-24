@@ -112,6 +112,10 @@ struct pasn_data {
 	struct wpabuf *auth1;
 
 	struct wpabuf *beacon_rsne_rsnxe;
+#ifdef CONFIG_IEEE80211BN
+	u8 smd_identifier[ETH_ALEN];
+	bool smd_capable;
+#endif /* CONFIG_IEEE80211BN */
 	struct wpa_ptk ptk;
 	struct crypto_ecdh *ecdh;
 

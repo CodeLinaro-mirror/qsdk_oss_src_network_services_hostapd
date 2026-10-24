@@ -849,6 +849,15 @@ static void wpas_pasn_auth_start_cb(struct wpa_radio_work *work, int deinit)
 		goto fail;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (awork->auth_alg == WLAN_AUTH_EPPKE) {
+		os_memcpy(pasn->smd_identifier, bss->smd_identifier,
+			  ETH_ALEN);
+		pasn->smd_capable = wpas_eppke_ap_rsnx_capab(
+			wpa_s, bss, WLAN_RSNX_CAPAB_SMD);
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	rsne = wpa_bss_get_rsne(wpa_s, bss, NULL, false);
 	if (!rsne) {
 		wpa_printf(MSG_DEBUG, "PASN: BSS without RSNE");
