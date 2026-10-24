@@ -1475,6 +1475,12 @@
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
  *
+ * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
+ *	Critical Update (CU) session on an AP link. Requires
+ *	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_MLO_LINK_ID,
+ *	%NL80211_ATTR_CU_TYPE, and
+ *	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -3351,6 +3357,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
+ * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
+ *	Used with %NL80211_CMD_CRITICAL_UPDATE.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -4022,6 +4031,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 	NL80211_ATTR_CU_TYPE,
+<<<<<<< HEAD
 
 	NL80211_ATTR_CU_STATE,
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
@@ -10012,7 +10022,6 @@ enum nl80211_smd_link_transition_state {
 enum nl80211_cu_type {
 	NL80211_CU_TYPE_UHR_PARAMS,
 };
-
 
 /**
  * enum nl80211_cu_state - UHR Enhanced Critical Update (ECU) state
