@@ -4156,9 +4156,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 	} else {
 		iface->cac_started = 0;
 		iface->cac_type = 0;
-#ifdef CONFIG_QCN_EXTN
-		iface->bootup_cac_in_progress = 0;
-#endif /* CONFIG_QCN_EXTN */
 	}
 
 #ifdef CONFIG_QCN_EXTN
