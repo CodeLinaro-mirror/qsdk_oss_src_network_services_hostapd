@@ -3008,30 +3008,28 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 		os_memset(&mld, 0, sizeof(mld));
 		mld.mld_sta = true;
 
-		/* Build mld_info for accepted links */
+		/* Build per-STA profiles for all links — accepted and rejected.
+		 * Rejected links get Cap Info + failure Status Code only
+		 * (ieee80211_ml_build_assoc_resp exits early on non-SUCCESS).
+		 */
 		dl_list_for_each(info, &req_list->list,
 				 struct uhr_link_reconf_req_info, list) {
-			if (info->status == WLAN_STATUS_SUCCESS) {
-				os_memcpy(mld.links[info->link_id].local_addr, info->local_addr, ETH_ALEN);
-				os_memcpy(mld.links[info->link_id].peer_addr, info->peer_addr, ETH_ALEN);
+			struct mld_link_info *link = &mld.links[info->link_id];
+			struct hostapd_data *lhapd;
 
+			lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
+			if (!lhapd)
+				continue;
 
-				struct mld_link_info *link = &mld.links[info->link_id];
-				struct hostapd_data *lhapd;
-
-
-				lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
-				if (!lhapd)
-					continue;
-				
-				link->valid = true;
-				link->status = info->status;
-				ieee80211_ml_build_assoc_resp(lhapd, NULL, sta, link);
-				wpa_printf(MSG_DEBUG,
-					   "SMD ST PREP Target AP: link=%u aid=%u resp_sta_profile_len=%u",
-					   info->link_id, sta ? sta->aid : 0,
-					   link->resp_sta_profile_len);
-			}
+			os_memcpy(link->local_addr, info->local_addr, ETH_ALEN);
+			os_memcpy(link->peer_addr, info->peer_addr, ETH_ALEN);
+			link->valid = true;
+			link->status = info->status;
+			ieee80211_ml_build_assoc_resp(lhapd, NULL, sta, link, true);
+			wpa_printf(MSG_DEBUG,
+				   "SMD ST PREP Target AP: link=%u status=%u resp_sta_profile_len=%u",
+				   info->link_id, info->status,
+				   link->resp_sta_profile_len);
 		}
 
 		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, true,
@@ -3093,8 +3091,8 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 			   "SMD ST PREP Target AP: Added ML-IE (len=%zu)",
 			   mle_len);
 	}
-	
-        pos = hostapd_eid_smd_bss_trans_prep_resp(
+
+	pos = hostapd_eid_smd_bss_trans_prep_resp(
                 pos,
                 0,
                 NULL, 0,   // DL BA Info not present
@@ -3761,7 +3759,7 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 				  ETH_ALEN);
 			link->valid = true;
 			link->status = WLAN_STATUS_SUCCESS;
-			ieee80211_ml_build_assoc_resp(link_hapd, NULL, sta, link);
+			ieee80211_ml_build_assoc_resp(link_hapd, NULL, sta, link, true);
 			wpa_printf(MSG_DEBUG,
 				   "SMD ST EXEC Target AP: link=%u aid=%u resp_sta_profile_len=%u",
 				   i, sta->aid, link->resp_sta_profile_len);

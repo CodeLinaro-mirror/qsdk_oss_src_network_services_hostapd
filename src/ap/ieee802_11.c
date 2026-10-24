@@ -8426,7 +8426,8 @@ int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 				   struct hostapd_data *phapd,
 				   struct sta_info *sta,
-				   struct mld_link_info *link)
+				   struct mld_link_info *link,
+				   bool smd_st_resp)
 {
 	struct hostapd_data *assoc_hapd;
 	struct sta_info *assoc_sta;
@@ -8504,64 +8505,103 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 
 	p = hostapd_eid_ext_capab(hapd, p, false);
 
-	assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
-	if (assoc_sta && hapd != assoc_hapd) {
-		const u8 *rsnxe, *assoc_rsnxe;
-#ifdef CONFIG_ENC_ASSOC
-		const u8 *rsne, *assoc_rsne;
-#endif /* CONFIG_ENC_ASSOC */
-		u8 ie_count = 0, non_inherit_ie[2];
+	if (smd_st_resp) {
+		/*
+		 * ST Prep/Exec Response: no frame-body base exists, so each
+		 * per-STA profile must be self-contained.  Emit RSNXE for this
+		 * link unconditionally; never emit a Non-Inheritance IE.
+		 */
+		const u8 *rsnxe = hostapd_wpa_ie(hapd, WLAN_EID_RSNX);
 
-		rsnxe = hostapd_wpa_ie(hapd, WLAN_EID_RSNX);
-		assoc_rsnxe = hostapd_wpa_ie(assoc_hapd, WLAN_EID_RSNX);
-#ifdef CONFIG_ENC_ASSOC
-		rsne = hostapd_wpa_ie(hapd, WLAN_EID_RSN);
-		assoc_rsne = hostapd_wpa_ie(assoc_hapd, WLAN_EID_RSN);
-#endif /* CONFIG_ENC_ASSOC */
+		if (rsnxe && !hapd->conf->rsn_override_omit_rsnxe) {
+			size_t rsnx_ie_len = 2 + rsnxe[1];
 
-		if (assoc_hapd->conf->rsn_override_omit_rsnxe)
-			goto omit_rsnxe;
-
-		if (assoc_rsnxe && !rsnxe)
-			non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
-
-		if ((!assoc_rsnxe && rsnxe) ||
-		    (rsnxe && assoc_rsnxe &&
-		     (rsnxe[1] != assoc_rsnxe[1] ||
-		      os_memcmp(rsnxe, assoc_rsnxe, 2 + rsnxe[1]) != 0))) {
-			size_t rsnx_ie_len;
-
-			rsnx_ie_len = 2 + rsnxe[1];
-			if ((size_t) (buf + buflen - p) >= rsnx_ie_len) {
+			if ((size_t)(buf + buflen - p) >= rsnx_ie_len) {
 				os_memcpy(p, rsnxe, rsnx_ie_len);
 				p += rsnx_ie_len;
 			}
 		}
-omit_rsnxe:
 #ifdef CONFIG_ENC_ASSOC
 		if (ap_sta_is_epp(sta) &&
 		    wpa_auth_ap_sta_support_assoc_enc(sta->wpa_sm)) {
-			if ((rsne && assoc_rsne &&
-			     (rsne[1] != assoc_rsne[1] ||
-			      os_memcmp(rsne, assoc_rsne, 2 + rsne[1]) != 0))) {
-				size_t rsn_ie_len;
+			const u8 *rsne = hostapd_wpa_ie(hapd, WLAN_EID_RSN);
 
-				rsn_ie_len = 2 + rsne[1];
-				if ((size_t) (buf + buflen - p) >= rsn_ie_len) {
+			if (rsne) {
+				size_t rsn_ie_len = 2 + rsne[1];
+
+				if ((size_t)(buf + buflen - p) >= rsn_ie_len) {
 					os_memcpy(p, rsne, rsn_ie_len);
 					p += rsn_ie_len;
 				}
 			}
 		}
 #endif /* CONFIG_ENC_ASSOC */
-		if (ie_count) {
-			*p++ = WLAN_EID_EXTENSION;
-			*p++ = 2 + ie_count + 1;
-			*p++ = WLAN_EID_EXT_NON_INHERITANCE;
-			*p++ = ie_count;
-			os_memcpy(p, non_inherit_ie, ie_count);
-			p += ie_count;
-			*p++ = 0; /* No Element ID Extension List */
+		if (hapd->conf->security_profiles) {
+			size_t sp_len = hostapd_security_profile_ie_len(hapd);
+
+			if (sp_len && (size_t)(buf + buflen - p) >= sp_len)
+				p = hostapd_eid_security_profile(hapd, p);
+		}
+	} else {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (assoc_sta && hapd != assoc_hapd) {
+			const u8 *rsnxe, *assoc_rsnxe;
+#ifdef CONFIG_ENC_ASSOC
+			const u8 *rsne, *assoc_rsne;
+#endif /* CONFIG_ENC_ASSOC */
+			u8 ie_count = 0, non_inherit_ie[2];
+
+			rsnxe = hostapd_wpa_ie(hapd, WLAN_EID_RSNX);
+			assoc_rsnxe = hostapd_wpa_ie(assoc_hapd, WLAN_EID_RSNX);
+#ifdef CONFIG_ENC_ASSOC
+			rsne = hostapd_wpa_ie(hapd, WLAN_EID_RSN);
+			assoc_rsne = hostapd_wpa_ie(assoc_hapd, WLAN_EID_RSN);
+#endif /* CONFIG_ENC_ASSOC */
+
+			if (assoc_hapd->conf->rsn_override_omit_rsnxe)
+				goto omit_rsnxe;
+
+			if (assoc_rsnxe && !rsnxe)
+				non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
+
+			if ((!assoc_rsnxe && rsnxe) ||
+			    (rsnxe && assoc_rsnxe &&
+			     (rsnxe[1] != assoc_rsnxe[1] ||
+			      os_memcmp(rsnxe, assoc_rsnxe, 2 + rsnxe[1]) != 0))) {
+				size_t rsnx_ie_len;
+
+				rsnx_ie_len = 2 + rsnxe[1];
+				if ((size_t)(buf + buflen - p) >= rsnx_ie_len) {
+					os_memcpy(p, rsnxe, rsnx_ie_len);
+					p += rsnx_ie_len;
+				}
+			}
+omit_rsnxe:
+#ifdef CONFIG_ENC_ASSOC
+			if (ap_sta_is_epp(sta) &&
+			    wpa_auth_ap_sta_support_assoc_enc(sta->wpa_sm)) {
+				if ((rsne && assoc_rsne &&
+				     (rsne[1] != assoc_rsne[1] ||
+				      os_memcmp(rsne, assoc_rsne, 2 + rsne[1]) != 0))) {
+					size_t rsn_ie_len;
+
+					rsn_ie_len = 2 + rsne[1];
+					if ((size_t)(buf + buflen - p) >= rsn_ie_len) {
+						os_memcpy(p, rsne, rsn_ie_len);
+						p += rsn_ie_len;
+					}
+				}
+			}
+#endif /* CONFIG_ENC_ASSOC */
+			if (ie_count) {
+				*p++ = WLAN_EID_EXTENSION;
+				*p++ = 2 + ie_count + 1;
+				*p++ = WLAN_EID_EXT_NON_INHERITANCE;
+				*p++ = ie_count;
+				os_memcpy(p, non_inherit_ie, ie_count);
+				p += ie_count;
+				*p++ = 0; /* No Element ID Extension List */
+			}
 		}
 	}
 
@@ -8728,7 +8768,7 @@ out:
 	link->status = status;
 
 	if (!offload && (type == LINK_PARSE_ASSOC || type == LINK_PARSE_REASSOC))
-		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link);
+		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link, false);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
 	if (status != WLAN_STATUS_SUCCESS) {
@@ -9026,7 +9066,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			link->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			link->rejected = true;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
 		} else if (tx_link_status != WLAN_STATUS_SUCCESS) {
 			/*
 			 * TX link was rejected; per spec all partner links must
@@ -9035,7 +9075,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
 			link->rejected = true;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
 		} else {
 			/*
 			 * Operator policy: cap the number of links per STA.
@@ -9050,7 +9090,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
 				link->rejected = true;
 				if (!offload)
-					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
 				goto release_ref;
 			}
 
@@ -9065,7 +9105,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				link->status = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				link->rejected = true;
 				if (!offload)
-					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
 				goto release_ref;
 			}
 
