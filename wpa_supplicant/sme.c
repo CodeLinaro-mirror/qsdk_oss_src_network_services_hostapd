@@ -683,7 +683,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	struct pasn_data *pasn;
 	const u8 *ap_rsne, *ap_rsnxe;
 	u8 ap_rsne_len, ap_rsnxe_len;
-	u32 capab = 0;
+	u64 capab = 0;
 	int group;
 	bool derive_kdk;
 	u8 rsne[80];
@@ -842,6 +842,12 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SPP_AMSDU) &&
 	    ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_SPP_A_MSDU))
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
+
+#ifdef CONFIG_IEEE80211BN
+	if (wpa_sm_get_rsnxe_capab(wpa_s->wpa) &
+	    BIT_ULL(WLAN_RSNX_CAPAB_SMD))
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
+#endif /* CONFIG_IEEE80211BN */
 
 	pasn_set_rsnxe_caps(pasn, capab);
 	pasn_set_initiator_pmksa(pasn, wpa_sm_get_pmksa_cache(wpa_s->wpa));
