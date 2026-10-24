@@ -1481,6 +1481,10 @@
  *	%NL80211_ATTR_CU_TYPE, and
  *	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
  *
+ * @NL80211_CMD_CRITICAL_UPDATE_NOTIFY: Event sent by the kernel to notify
+ *	user space of CU lifecycle transitions on an AP link.
+ *	Carries %NL80211_ATTR_CU_STATE indicating the current ECU phase.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -3360,6 +3364,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
  *	Used with %NL80211_CMD_CRITICAL_UPDATE.
  *
+ * @NL80211_ATTR_CU_STATE: (u8) Current CU session state,
+ *	see &enum nl80211_cu_state. Carried in
+ *	%NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -4031,8 +4039,6 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 	NL80211_ATTR_CU_TYPE,
-<<<<<<< HEAD
-
 	NL80211_ATTR_CU_STATE,
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 	NL80211_ATTR_SMD_CONFIG,
