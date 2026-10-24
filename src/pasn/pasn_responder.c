@@ -847,14 +847,14 @@ static int security_profile_rsnxe_has_smd(const u8 *rsnxe,
  * Locate the Extended RSN Capabilities field in the Security Profile.
  *
  * sp_ie points to the Security Profile element payload as stored by the
- * local parser. In this tree, the payload includes the Extension ID.
+ * local parser. The parser already consumes the Extension ID byte before
+ * storing the payload, so sp_ie does NOT include the Extension ID here.
  *
- * Security Profile payload:
+ * Security Profile payload (as stored in sp_ie):
  *
- *   Octet 0: Extension ID                 1 octet
- *   Octet 1: Reduced RSN Capabilities     1 octet
- *   Octet 2: Security Profile Indication  1 octet
- *   Octet 3: Security Profile Bitmap      N octets
+ *   Octet 0: Reduced RSN Capabilities     1 octet
+ *   Octet 1: Security Profile Indication  1 octet
+ *   Octet 2: Security Profile Bitmap      N octets
  *   Remaining: Vendor Specific Profile List
  *   Remaining: Extended RSN Capabilities
  *
@@ -884,18 +884,17 @@ static int security_profile_get_rsnxe(const u8 *sp_ie, size_t sp_len,
 
 	end = sp_ie + sp_len;
 
-	/* Security Profile payload:
+	/* Security Profile payload (as stored in sp_ie):
 	 *
-	 *   [0]       Extension ID
-	 *   [1]       Reduced RSN Capabilities
-	 *   [2]       Security Profile Indication
-	 *   [3..]     Security Profile Bitmap
+	 *   [0]       Reduced RSN Capabilities
+	 *   [1]       Security Profile Indication
+	 *   [2..]     Security Profile Bitmap
 	 */
-	indication = sp_ie[2];
+	indication = sp_ie[1];
 	n = indication & 0x0f;
 	m = indication >> 4;
 
-	pos = sp_ie + 3;
+	pos = sp_ie + 2;
 
 	if ((size_t) (end - pos) < n)
 		return -1;
@@ -955,7 +954,7 @@ static int pasn_validate_peer_smd(const struct ieee802_11_elems *elems)
 		return -1;
 
 	standalone_present = elems->rsnxe && elems->rsnxe_len;
-	profile_present = elems->security_profile_ie && elems->security_profile_ie_len;
+	profile_present = elems->security_profile && elems->security_profile_len;
 
 	if (standalone_present) {
 		standalone_smd =
@@ -971,8 +970,8 @@ static int pasn_validate_peer_smd(const struct ieee802_11_elems *elems)
 	/* Locate the Extended RSN Capabilities field in the Security
 	 * Profile.
 	 */
-	ret = security_profile_get_rsnxe(elems->security_profile_ie,
-					 elems->security_profile_ie_len,
+	ret = security_profile_get_rsnxe(elems->security_profile,
+					 elems->security_profile_len,
 					 &profile_rsnxe,
 					 &profile_rsnxe_len);
 	if (ret < 0)
@@ -1020,10 +1019,7 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	int ret, inc_y;
 	bool derive_keys;
 	u32 i;
-	int has_security_profiles = 0;
 	const u8 *smd_identifier = NULL;
-	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
-	has_security_profiles = (hapd && hapd->conf && hapd->conf->security_profiles) ? 1 : 0;
 
 	if (!groups)
 		groups = default_groups;
@@ -1045,6 +1041,7 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	}
 #ifdef CONFIG_IEEE80211BN
 	int peer_smd;
+	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
 
 	peer_smd = pasn_validate_peer_smd(&elems);
 
@@ -1124,7 +1121,7 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	}
 
 
-	if (has_security_profiles && pasn->sp_ie_in_pasn_activated) {
+	if (pasn->sec_prof_enabled && pasn->sec_prof_used) {
 		if (!(rsn_data.pairwise_cipher & (WPA_CIPHER_GCMP_256))) {
 			wpa_printf(MSG_DEBUG, "PASN: Pairwise cipher not allowed for Security Profile");
 			status = WLAN_STATUS_INVALID_RSNIE;

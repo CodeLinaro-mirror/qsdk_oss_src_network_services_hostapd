@@ -5281,6 +5281,18 @@ pfs_fail:
 	 * when WPA_DRIVER_FLAGS2_SECURITY_PROFILE is not set, so the element
 	 * is omitted.
 	 */
+#ifdef CONFIG_TESTING_OPTIONS
+	if (wpa_s->sec_prof_override_assoc &&
+	    wpabuf_len(wpa_s->sec_prof_override_assoc) <=
+	    max_wpa_ie_len - wpa_ie_len) {
+		wpa_printf(MSG_DEBUG,
+			   "TESTING: Security Profile element AssocReq override");
+		os_memcpy(wpa_ie + wpa_ie_len,
+			  wpabuf_head(wpa_s->sec_prof_override_assoc),
+			  wpabuf_len(wpa_s->sec_prof_override_assoc));
+		wpa_ie_len += wpabuf_len(wpa_s->sec_prof_override_assoc);
+	} else
+#endif /* CONFIG_TESTING_OPTIONS */
 	if (wpa_s->security_profile_len > 0 &&
 	       wpa_s->sel_security_profile &&
 	       wpas_security_profile_active(wpa_s) &&
@@ -5987,11 +5999,15 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 	}
 
 #ifdef CONFIG_ENC_ASSOC
-	if (wpa_key_mgmt_eppke(ssid->key_mgmt) &&
+	if ((wpa_key_mgmt_eppke(ssid->key_mgmt) ||
+	     (wpa_s->sel_security_profile &&
+	      wpa_key_mgmt_eppke(wpa_s->sel_security_profile->key_mgmt))) &&
 	    wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_EPPKE) {
 		params.eppke_supported = true;
 		if (wpa_key_mgmt_sae_ext_key(params.key_mgmt_suite) ||
-		    wpa_key_mgmt_sae_ext_key(params.allowed_key_mgmts)) {
+		    wpa_key_mgmt_sae_ext_key(params.allowed_key_mgmts) ||
+		    (wpa_s->sel_security_profile &&
+		     wpa_key_mgmt_eppke(wpa_s->sel_security_profile->key_mgmt))) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "EPPKE authentication");
 			params.auth_alg = WPA_AUTH_ALG_EPPKE;
 		}

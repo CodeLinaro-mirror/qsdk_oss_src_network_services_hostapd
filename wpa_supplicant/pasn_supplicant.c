@@ -1036,16 +1036,25 @@ static void wpas_pasn_auth_start_cb(struct wpa_radio_work *work, int deinit)
 				   "EPPKE: No network profile found");
 			goto fail;
 		}
-		if (!ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_KEK_IN_PASN))
+		if (!wpas_eppke_ap_rsnx_capab(wpa_s, bss,
+					     WLAN_RSNX_CAPAB_KEK_IN_PASN))
 		{
 			wpa_printf(MSG_INFO,
 				   "EPPKE: KEK_IN_PASN not set in AP RSNXE");
 			goto fail;
 		}
-		if (!ieee802_11_rsnx_capab(rsnxe,
-					   WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) {
+		if (!wpas_eppke_ap_rsnx_capab(
+			    wpa_s, bss,
+			    WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) {
 			wpa_printf(MSG_INFO,
 				   "EPPKE: ASSOC_FRAME_ENCRYPTION not set in AP RSNXE");
+			goto fail;
+		}
+		if (awork->akmp == WPA_KEY_MGMT_EPPKE &&
+		    !wpas_eppke_ap_rsnx_capab(wpa_s, bss,
+					     WLAN_RSNX_CAPAB_UNAUTH_EPPKE)) {
+			wpa_printf(MSG_DEBUG,
+				   "EPPKE: AP does not support unauthenticated EPPKE");
 			goto fail;
 		}
 		if (wpa_s->drv_flags2 &

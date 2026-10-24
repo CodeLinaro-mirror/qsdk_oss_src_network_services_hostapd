@@ -5277,9 +5277,7 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	config->mld_connect_band_pref = DEFAULT_MLD_CONNECT_BAND_PREF;
 #endif /* CONFIG_TESTING_OPTIONS */
 
- #ifdef CONFIG_QCN_EXTN
 	config->security_profiles = DEFAULT_SECURITY_PROFILES;
- #endif /* CONFIG_QCN_EXTN */
 
 	return config;
 }

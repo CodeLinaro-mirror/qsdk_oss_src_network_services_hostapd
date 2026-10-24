@@ -5343,7 +5343,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		 * rsnxe_capab_mask=20 suppresses SAE-H2E (bit 5 = 0x20).
 		 * Internally stored as the allow-mask (~value).
 		 */
-		bss->rsnxe_capab_mask = ~strtoull(pos, NULL, 16);
+		bss->rsnxe_capab_mask = (~strtoull(pos, NULL, 16)) | 0x0f;
 	} else if (os_strcmp(buf, "skip_prune_assoc") == 0) {
 		bss->skip_prune_assoc = atoi(pos);
 	} else if (os_strcmp(buf, "ft_rsnxe_used") == 0) {

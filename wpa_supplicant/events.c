@@ -723,12 +723,17 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		wpa_dbg(wpa_s, MSG_ERROR,
 			"   SP IE check: sp_ie=%p ssid->security_profiles=%p",
 			sp_ie, ssid->security_profiles);
-	if (sp_ie && ssid->security_profiles &&
-	    security_profile_select_best(sp_ie, ssid->security_profiles)) {
+	if (sp_ie && ssid->security_profiles) {
+		if (security_profile_select_best(sp_ie, ssid->security_profiles)) {
+			if (debug_print)
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"   selected based on Security Profile element");
+			return 1;
+		}
 		if (debug_print)
 			wpa_dbg(wpa_s, MSG_DEBUG,
-				"   selected based on Security Profile element");
-		return 1;
+				"   No match between AP and STA security profiles");
+		return 0;
 	}
 
 	while ((ssid->proto & WPA_PROTO_RSN) && rsn_ie) {

@@ -2367,7 +2367,7 @@ void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
 #ifdef CONFIG_QCN_EXTN
 static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 {
-	if (!wpa_s->current_ssid || !wpa_s->current_ssid->security_profiles)
+	if (!wpa_s->conf->security_profiles)
 		return false;
 	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
 		return true; /* wpa_supplicant-SME: always active */

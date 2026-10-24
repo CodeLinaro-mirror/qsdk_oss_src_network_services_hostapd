@@ -804,6 +804,9 @@ static u16 validate_security_profile_common(
 		   MAC2STR(sta->addr), auth_context);
 
 	sta->sp_ie_validated = 1;
+#ifdef CONFIG_PASN
+	sta->sec_prof_used = true;
+#endif /* CONFIG_PASN */
 
 	/* UHR Security Profile validated successfully */
 	if (sta->wpa_sm) {
@@ -2416,33 +2419,6 @@ int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 
-/*
- * hostapd_sp_implied_key_mgmt - Derive implied key_mgmt from security profiles
- *
- * Returns the union of all AKMs defined by the configured security profiles.
- * Allows the AP to accept connections whose AKM is implied by a Security
- * Profile IE even when that AKM is not explicitly listed in wpa_key_mgmt.
- * Covers all profile families: EPPKE (0-2), 802.1X (3-7/11-15), OWE (8),
- * SAE (9), FT-SAE (10).
- */
-int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
-{
-	int i, implied = 0;
-
-	if (!conf->security_profiles)
-		return 0;
-
-	for (i = 0; conf->security_profiles[i] >= 0; i++) {
-		int p = conf->security_profiles[i];
-		const struct security_profile_entry *sp;
-
-		sp = sec_prof_get(p);
-		if (sp)
-			implied |= sp->key_mgmt;
-	}
-	return implied;
-}
-
 static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	struct sae_data *sae = sta->sae;
@@ -2457,8 +2433,7 @@ static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
-					     hostapd_sp_implied_key_mgmt(conf)))
+		if (hostapd_config_sae_ext_key(conf))
 			default_groups[1] = 20;
 	}
 
@@ -2533,8 +2508,7 @@ static int sae_is_group_enabled(struct hostapd_data *hapd, int group)
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
-					     hostapd_sp_implied_key_mgmt(conf)))
+		if (hostapd_config_sae_ext_key(conf))
 			default_groups[1] = 20;
 	}
 
@@ -2605,8 +2579,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
-					     hostapd_sp_implied_key_mgmt(conf)))
+		if (hostapd_config_sae_ext_key(conf))
 			default_groups[1] = 20;
 	}
 
@@ -3356,7 +3329,8 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "Received pairwise cipher (0x%x) in RSNE",
 			   rsn.pairwise_cipher);
 
-		if (!(rsn.key_mgmt & hapd->conf->wpa_key_mgmt)) {
+		if (!(rsn.key_mgmt & (hapd->conf->wpa_key_mgmt |
+				      hostapd_config_sp_key_mgmt(hapd->conf)))) {
 			wpa_printf(MSG_INFO, "Invalid key mgmt (0x%x) in RSNE",
 				   rsn.key_mgmt);
 			return WPA_INVALID_AKMP;
@@ -4853,9 +4827,10 @@ static void hapd_initialize_pasn(struct hostapd_data *hapd,
 		pasn_set_own_mld_addr(pasn, hapd->mld->mld_addr);
 #endif /* CONFIG_IEEE80211BE && CONFIG_ENC_ASSOC */
 	pasn_set_peer_addr(pasn, sta->addr);
-	pasn_set_wpa_key_mgmt(pasn, hapd->conf->wpa_key_mgmt |
-			      hostapd_sp_implied_key_mgmt(hapd->conf));
-	pasn_set_rsn_pairwise(pasn, hapd->conf->rsn_pairwise);
+	pasn->sec_prof_enabled = hapd->conf->security_profiles ? true : false;
+	pasn_set_wpa_key_mgmt(pasn, hostapd_config_all_key_mgmt(hapd->conf));
+	pasn_set_rsn_pairwise(pasn, hapd->conf->rsn_pairwise |
+			      hapd->conf->rsn_override_pairwise);
 	pasn_set_mfp(pasn, hapd->conf->ieee80211w);
 	os_free(pasn->pasn_groups);
 	pasn->pasn_groups = int_array_dup(hapd->conf->pasn_groups);
@@ -4946,7 +4921,6 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 	struct wpabuf *wrapped_data = NULL;
 #endif /* CONFIG_FILS */
 	int akmp;
-	int has_security_profiles = hapd->conf->security_profiles ? 1 : 0;
 
 	if (ieee802_11_parse_elems(mgmt->u.auth.variable,
 				   len - offsetof(struct ieee80211_mgmt,
@@ -4969,7 +4943,7 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (has_security_profiles && sta->sp_ie_validated) {
+	if (pasn->sec_prof_enabled && pasn->sec_prof_used) {
 		if (!(rsn_data.pairwise_cipher & (WPA_CIPHER_GCMP_256))) {
 			wpa_printf(MSG_DEBUG, "PASN: Pairwise cipher not allowed for Security Profile");
 			return;
@@ -5141,6 +5115,8 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 
 		if (sta->sp_ie_validated)
 			sta->pasn->sp_ie_in_pasn_activated = 1;
+		if (sta->sec_prof_used)
+			sta->pasn->sec_prof_used = true;
 
 		hapd_pasn_update_params(hapd, sta, mgmt, len);
 
@@ -5351,10 +5327,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211R_AP */
 #ifdef CONFIG_SAE
 	      (hapd->conf->wpa &&
-	       wpa_key_mgmt_sae(hapd->conf->wpa_key_mgmt |
-				hapd->conf->rsn_override_key_mgmt |
-				hapd->conf->rsn_override_key_mgmt_2 |
-				hostapd_sp_implied_key_mgmt(hapd->conf)) &&
+	       wpa_key_mgmt_sae(hostapd_config_all_key_mgmt(hapd->conf)) &&
 	       auth_alg == WLAN_AUTH_SAE) ||
 #endif /* CONFIG_SAE */
 #ifdef CONFIG_FILS
@@ -5371,8 +5344,8 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_PASN */
 #ifdef CONFIG_ENC_ASSOC
 	      (hapd->conf->wpa &&
-	       (((hapd->conf->wpa_key_mgmt | hostapd_config_sp_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_EPPKE) ||
-		(hostapd_sp_implied_key_mgmt(hapd->conf) & WPA_KEY_MGMT_EPPKE)) &&
+	       ((hostapd_config_all_key_mgmt(hapd->conf)) &
+		WPA_KEY_MGMT_EPPKE) &&
 	       hapd->conf->assoc_frame_encryption &&
 	       auth_alg == WLAN_AUTH_EPPKE) ||
 #endif /* CONFIG_ENC_ASSOC */
@@ -7509,7 +7482,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 				   "UHR: (Re)Assoc Security Profile validated "
 				   "for " MACSTR, MAC2STR(sta->addr));
 
-			if (matched_profile->number != 0) {
+			if (matched_profile && matched_profile->number != 0) {
 				wpa_printf(MSG_ERROR," %d %s %d \n", matched_profile->number, __func__, __LINE__);
 				security_profile_matched = true;
 			}
@@ -7999,9 +7972,7 @@ skip_pmkid_update:
 #endif /* CONFIG_SAE */
 
 #ifdef CONFIG_OWE
-		if (((hapd->conf->wpa_key_mgmt |
-		      hapd->conf->rsn_override_key_mgmt |
-		      hapd->conf->rsn_override_key_mgmt_2) &
+		if (((hostapd_config_all_key_mgmt(hapd->conf)) &
 		     WPA_KEY_MGMT_OWE) &&
 		    wpa_auth_sta_key_mgmt(sta->wpa_sm) == WPA_KEY_MGMT_OWE &&
 		    elems->owe_dh) {
@@ -8535,7 +8506,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		}
 #endif /* CONFIG_ENC_ASSOC */
 		if (hapd->conf->security_profiles) {
-			size_t sp_len = hostapd_security_profile_ie_len(hapd);
+			size_t sp_len = hostapd_security_profile_len(hapd);
 
 			if (sp_len && (size_t)(buf + buflen - p) >= sp_len)
 				p = hostapd_eid_security_profile(hapd, p);
@@ -9415,7 +9386,8 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_OWE
-	if (sta && ((hapd->conf->wpa_key_mgmt | hostapd_sp_implied_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE))
+	if (sta &&
+	    ((hostapd_config_all_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE))
 		buflen += 150;
 #endif /* CONFIG_OWE */
 #ifdef CONFIG_DPP2
@@ -9557,10 +9529,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_OWE
 	if (sta && status_code == WLAN_STATUS_SUCCESS &&
-	    ((hapd->conf->wpa_key_mgmt |
-	      hapd->conf->rsn_override_key_mgmt |
-	      hapd->conf->rsn_override_key_mgmt_2) &
-	     WPA_KEY_MGMT_OWE))
+	    ((hostapd_config_all_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE))
 		p = wpa_auth_write_assoc_resp_owe(sta->wpa_sm, p,
 						  buf + buflen - p);
 #endif /* CONFIG_OWE */
@@ -9701,8 +9670,7 @@ rsnxe_done:
 							  sta);
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_OWE
-	if (((hapd->conf->wpa_key_mgmt | hapd->conf->rsn_override_key_mgmt |
-	      hapd->conf->rsn_override_key_mgmt_2) & WPA_KEY_MGMT_OWE) &&
+	if (((hostapd_config_all_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE) &&
 	    sta && sta->owe_ecdh && status_code == WLAN_STATUS_SUCCESS &&
 	    wpa_auth_sta_key_mgmt(sta->wpa_sm) == WPA_KEY_MGMT_OWE &&
 	    !wpa_auth_sta_get_pmksa(sta->wpa_sm)) {
