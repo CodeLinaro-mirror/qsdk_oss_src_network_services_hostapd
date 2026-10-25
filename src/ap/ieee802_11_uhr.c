@@ -3025,7 +3025,8 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 			os_memcpy(link->peer_addr, info->peer_addr, ETH_ALEN);
 			link->valid = true;
 			link->status = info->status;
-			ieee80211_ml_build_assoc_resp(lhapd, NULL, sta, link, true);
+			ieee80211_ml_build_assoc_resp(lhapd, NULL, sta, link,
+						      true, false);
 			wpa_printf(MSG_DEBUG,
 				   "SMD ST PREP Target AP: link=%u status=%u resp_sta_profile_len=%u",
 				   info->link_id, info->status,
@@ -3759,7 +3760,8 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 				  ETH_ALEN);
 			link->valid = true;
 			link->status = WLAN_STATUS_SUCCESS;
-			ieee80211_ml_build_assoc_resp(link_hapd, NULL, sta, link, true);
+			ieee80211_ml_build_assoc_resp(link_hapd, NULL, sta, link,
+						      true, false);
 			wpa_printf(MSG_DEBUG,
 				   "SMD ST EXEC Target AP: link=%u aid=%u resp_sta_profile_len=%u",
 				   i, sta->aid, link->resp_sta_profile_len);

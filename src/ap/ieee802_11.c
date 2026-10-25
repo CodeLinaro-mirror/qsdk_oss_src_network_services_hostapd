@@ -8425,14 +8425,176 @@ int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_IEEE80211BE
 
+/**
+ * hostapd_ml_profile_has_ie - check for an IE identity in an MLO profile
+ * @ies: IE section to search
+ * @ies_len: length of @ies
+ * @candidate: IE whose identity is searched for
+ *
+ * For extension IEs, identity is based on the extension ID; for other IEs,
+ * identity is based on the element ID. IE contents are intentionally not
+ * compared because differing partner-link contents are carried explicitly.
+ *
+ * Return: true if an IE with the same identity is present, false otherwise.
+ */
+static bool hostapd_ml_profile_has_ie(const u8 *ies, size_t ies_len,
+				      const u8 *candidate)
+{
+	while (ies_len >= 2) {
+		size_t elem_len = 2 + ies[1];
+
+		if (elem_len > ies_len)
+			return false;
+
+		if (ies[0] == candidate[0] &&
+		    (ies[0] != WLAN_EID_EXTENSION ||
+		     (ies[1] >= 1 && candidate[1] >= 1 &&
+		      ies[2] == candidate[2])))
+			return true;
+
+		ies += elem_len;
+		ies_len -= elem_len;
+	}
+
+	return false;
+}
+
+static bool hostapd_ml_id_in_list(const u8 *list, size_t list_len, u8 id)
+{
+	size_t i;
+
+	for (i = 0; i < list_len; i++) {
+		if (list[i] == id)
+			return true;
+	}
+
+	return false;
+}
+
+#define ML_NONINHERIT_MAX_PAYLOAD 255
+#define ML_NONINHERIT_FIXED_PAYLOAD_LEN 3
+
+/**
+ * hostapd_ml_add_noninheritance - append an MLO Non-Inheritance IE
+ * @pos: current output position
+ * @end: end of the output buffer
+ * @reporting_ies: IE section from the reporting link
+ * @reporting_ies_len: length of @reporting_ies
+ * @reported_ies: IE section from the partner link
+ * @reported_ies_len: length of @reported_ies
+ * @rsnxe_noninherit: whether RSNXE must be listed as non-inherited
+ *
+ * Builds a Basic Multi-Link Non-Inheritance IE for element identities present
+ * in the reporting profile but absent from the partner profile. The input
+ * buffers exclude the fixed Capability and Status fields. Standard and
+ * extension element IDs are emitted in separate lists.
+ *
+ * Return: updated output position, or @pos if no list is needed or the buffer
+ * lacks sufficient space.
+ */
+static u8 * hostapd_ml_add_noninheritance(u8 *pos, u8 *end,
+					  const u8 *reporting_ies,
+					  size_t reporting_ies_len,
+					  const u8 *reported_ies,
+					  size_t reported_ies_len,
+					  bool rsnxe_noninherit)
+{
+	u8 elem_list[256];
+	u8 ext_elem_list[256];
+	size_t elem_list_len = 0, ext_elem_list_len = 0;
+	size_t payload_len, ie_len;
+
+	if (rsnxe_noninherit)
+		elem_list[elem_list_len++] = WLAN_EID_RSNX;
+
+	while (reporting_ies_len >= 2) {
+		const u8 *ie = reporting_ies;
+		size_t elem_len = 2 + ie[1];
+		u8 *list;
+		size_t *list_len;
+		u8 id;
+
+		if (elem_len > reporting_ies_len)
+			break;
+
+		/* Fragment elements belong to the preceding fragmentable
+		 * element and must not be listed independently. */
+		if (ie[0] == WLAN_EID_FRAGMENT)
+			goto next_ie;
+
+		if (ie[0] == WLAN_EID_EXTENSION) {
+			if (ie[1] < 1 || ie[2] == WLAN_EID_EXT_NON_INHERITANCE)
+				goto next_ie;
+			list = ext_elem_list;
+			list_len = &ext_elem_list_len;
+			id = ie[2];
+		} else {
+			list = elem_list;
+			list_len = &elem_list_len;
+			id = ie[0];
+		}
+
+		if (!hostapd_ml_profile_has_ie(reported_ies, reported_ies_len,
+					       ie) &&
+		    !hostapd_ml_id_in_list(list, *list_len, id)) {
+			/* The payload has three fixed bytes: Extension Element ID,
+			 * standard Element ID list length, and extension Element ID
+			 * list length. Reserve space for the ID being added.
+			 */
+			if (*list_len >= 255 ||
+			    ML_NONINHERIT_FIXED_PAYLOAD_LEN + elem_list_len +
+			    ext_elem_list_len >= ML_NONINHERIT_MAX_PAYLOAD) {
+				wpa_printf(MSG_WARNING,
+					   "MLD: Non-Inheritance list is full");
+				break;
+			}
+			list[(*list_len)++] = id;
+		}
+
+next_ie:
+		reporting_ies += elem_len;
+		reporting_ies_len -= elem_len;
+	}
+
+	if (!elem_list_len && !ext_elem_list_len)
+		return pos;
+
+	payload_len = ML_NONINHERIT_FIXED_PAYLOAD_LEN +
+		elem_list_len + ext_elem_list_len;
+	ie_len = 2 + payload_len;
+
+	/* The Length field contains the payload bytes described above. */
+	if (payload_len > ML_NONINHERIT_MAX_PAYLOAD ||
+	    (size_t) (end - pos) < ie_len) {
+		wpa_printf(MSG_WARNING,
+			   "MLD: No space for Non-Inheritance element");
+		return pos;
+	}
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = payload_len;
+	*pos++ = WLAN_EID_EXT_NON_INHERITANCE;
+	*pos++ = elem_list_len;
+	os_memcpy(pos, elem_list, elem_list_len);
+	pos += elem_list_len;
+	*pos++ = ext_elem_list_len;
+	os_memcpy(pos, ext_elem_list, ext_elem_list_len);
+	pos += ext_elem_list_len;
+
+	return pos;
+}
+
 void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 				   struct hostapd_data *phapd,
 				   struct sta_info *sta,
 				   struct mld_link_info *link,
-				   bool smd_st_resp)
+				   bool smd_st_resp,
+				   bool apply_inheritance)
 {
 	struct hostapd_data *assoc_hapd;
-	struct sta_info *assoc_sta;
+	struct sta_info *assoc_sta = NULL;
+	struct mld_link_info *cached_reporting_link;
+	bool rsnxe_noninherit = false;
 	u8 buf[EHT_ML_MAX_STA_PROF_LEN];
 	u8 *p = buf;
 	size_t buflen = sizeof(buf);
@@ -8551,7 +8713,6 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 #ifdef CONFIG_ENC_ASSOC
 			const u8 *rsne, *assoc_rsne;
 #endif /* CONFIG_ENC_ASSOC */
-			u8 ie_count = 0, non_inherit_ie[2];
 
 			rsnxe = hostapd_wpa_ie(hapd, WLAN_EID_RSNX);
 			assoc_rsnxe = hostapd_wpa_ie(assoc_hapd, WLAN_EID_RSNX);
@@ -8564,7 +8725,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 				goto omit_rsnxe;
 
 			if (assoc_rsnxe && !rsnxe)
-				non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
+				rsnxe_noninherit = true;
 
 			if ((!assoc_rsnxe && rsnxe) ||
 			    (rsnxe && assoc_rsnxe &&
@@ -8595,15 +8756,6 @@ omit_rsnxe:
 				}
 			}
 #endif /* CONFIG_ENC_ASSOC */
-			if (ie_count) {
-				*p++ = WLAN_EID_EXTENSION;
-				*p++ = 2 + ie_count + 1;
-				*p++ = WLAN_EID_EXT_NON_INHERITANCE;
-				*p++ = ie_count;
-				os_memcpy(p, non_inherit_ie, ie_count);
-				p += ie_count;
-				*p++ = 0; /* No Element ID Extension List */
-			}
 		}
 	}
 
@@ -8629,6 +8781,36 @@ omit_rsnxe:
 			  wpabuf_len(hapd->conf->assocresp_elements));
 		p += wpabuf_len(hapd->conf->assocresp_elements);
 	}
+
+	if (!apply_inheritance || link->status != WLAN_STATUS_SUCCESS ||
+	    !assoc_sta || !assoc_hapd || hapd == assoc_hapd)
+		goto write_noninheritance;
+
+	/* The profile is cached by hostapd_process_assoc_ml_info(). The
+	 * association-link slot is not emitted in a normal multi-link element.
+	 */
+	cached_reporting_link =
+		&assoc_sta->mld_info.links[assoc_sta->mld_assoc_link_id];
+
+	/* Skip Capability Info (2 bytes) and Status Code (2 bytes). */
+	if (cached_reporting_link->resp_sta_profile &&
+	    cached_reporting_link->resp_sta_profile_len >= 4 &&
+	    p - buf >= 4) {
+		p = hostapd_ml_add_noninheritance(
+			p, buf + buflen,
+			cached_reporting_link->resp_sta_profile + 4,
+			cached_reporting_link->resp_sta_profile_len - 4,
+			buf + 4, p - buf - 4, rsnxe_noninherit);
+		rsnxe_noninherit = false;
+	}
+
+write_noninheritance:
+	/* Preserve RSNXE-only non-inheritance for paths that do not apply
+	 * the generic profile comparison, such as Link Reconfiguration.
+	 */
+	if (rsnxe_noninherit)
+		p = hostapd_ml_add_noninheritance(p, buf + buflen,
+						  NULL, 0, NULL, 0, true);
 
 out:
 	os_free(link->resp_sta_profile);
@@ -8770,7 +8952,7 @@ out:
 	link->status = status;
 
 	if (!offload && (type == LINK_PARSE_ASSOC || type == LINK_PARSE_REASSOC))
-		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link, false);
+		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link, false, true);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
 	if (status != WLAN_STATUS_SUCCESS) {
@@ -9033,6 +9215,14 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			n_sorted++;
 		}
 
+	if (!offload && tx_link_status == WLAN_STATUS_SUCCESS && n_sorted) {
+		link = &sta->mld_info.links[sta->mld_assoc_link_id];
+		link->status = WLAN_STATUS_SUCCESS;
+
+		/* Cache the reporting profile in the association-link slot. */
+		ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false, false);
+	}
+
 	for (si = 0; si < n_sorted; si++) {
 		i = sorted_links[si];
 		link = &sta->mld_info.links[i];
@@ -9068,7 +9258,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			link->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			link->rejected = true;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link,
+							      false, true);
 		} else if (tx_link_status != WLAN_STATUS_SUCCESS) {
 			/*
 			 * TX link was rejected; per spec all partner links must
@@ -9077,7 +9268,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
 			link->rejected = true;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link,
+							      false, true);
 		} else {
 			/*
 			 * Operator policy: cap the number of links per STA.
@@ -9092,7 +9284,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
 				link->rejected = true;
 				if (!offload)
-					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link,
+								      false, true);
 				goto release_ref;
 			}
 
@@ -9107,7 +9300,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				link->status = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				link->rejected = true;
 				if (!offload)
-					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link, false);
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link,
+								      false, true);
 				goto release_ref;
 			}
 
@@ -11158,6 +11352,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 					       (u8 *)mgmt, sta->addr,
 					       hapd->own_addr, resp,
 					       true);
+
 #ifdef CONFIG_IEEE80211BE
 	if (sta)
 		hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
