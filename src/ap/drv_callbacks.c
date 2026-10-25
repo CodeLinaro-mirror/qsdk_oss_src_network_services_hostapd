@@ -1813,7 +1813,8 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	if (finished && npca_was_enabled)
+	if (finished && npca_was_enabled &&
+			!(hapd->iface->conf->conf_extn.dcs_conf.enable_bitmap & DCS_NPCA_AUTO))
 		hostapd_acs_npca_retrigger(hapd->iface);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BN */
