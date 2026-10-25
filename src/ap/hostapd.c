@@ -9252,6 +9252,17 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 
 		bss = (j < hapd_iface->num_bss) ? hapd_iface->bss[j] : NULL;
 
+#ifdef CONFIG_IEEE80211BE
+		if (bss && bss->eht_mld_link_removal_inprogress) {
+			wpa_printf(MSG_INFO,
+				   "%s link %u has link removal in progress, skipping to next",
+				   bss->conf->iface, bss->mld_link_id);
+			bss = NULL;
+			found_bss = false;
+			continue;
+		}
+#endif /* CONFIG_IEEE80211BE */
+
 		if (!bss || !bss->conf) {
 #ifdef CONFIG_IEEE80211BE
 			/* If bss or bss->conf is NULL and
