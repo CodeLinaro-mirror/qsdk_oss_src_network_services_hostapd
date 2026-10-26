@@ -1763,6 +1763,31 @@ skip_assoc_disallow:
 }
 
 
+/**
+ * wpas_mld_bss_with_ssid - Find a link of the same AP MLD with a known SSID
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @bss: BSS table entry of a link with zero-length SSID
+ * Returns: Another BSS of the same AP MLD that has a known SSID, or NULL
+ *
+ * A hidden-SSID link of an AP MLD sends zero-length SSID elements in its
+ * Beacon and Probe Response frames. The links of one AP MLD serve the same
+ * ESS, so the SSID of a sibling link can be used to match it.
+ */
+static struct wpa_bss * wpas_mld_bss_with_ssid(struct wpa_supplicant *wpa_s,
+					       struct wpa_bss *bss)
+{
+	struct wpa_bss *other;
+
+	dl_list_for_each(other, &wpa_s->bss, struct wpa_bss, list) {
+		if (other != bss && other->ssid_len &&
+		    os_memcmp(other->mld_addr, bss->mld_addr, ETH_ALEN) == 0)
+			return other;
+	}
+
+	return NULL;
+}
+
+
 struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 				     int i, struct wpa_bss *bss,
 				     struct wpa_ssid *group,
@@ -1823,6 +1848,15 @@ struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 	match_ssid = bss->ssid;
 	match_ssid_len = bss->ssid_len;
 	owe_trans_ssid(wpa_s, bss, &match_ssid, &match_ssid_len);
+
+	if (match_ssid_len == 0 && !is_zero_ether_addr(bss->mld_addr)) {
+		struct wpa_bss *parent = wpas_mld_bss_with_ssid(wpa_s, bss);
+
+		if (parent) {
+			match_ssid = parent->ssid;
+			match_ssid_len = parent->ssid_len;
+		}
+	}
 
 	if (match_ssid_len == 0) {
 		if (debug_print)
