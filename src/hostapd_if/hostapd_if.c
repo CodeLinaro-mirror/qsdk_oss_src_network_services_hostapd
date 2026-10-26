@@ -1440,7 +1440,9 @@ static void __send_802_1x_auth_response(struct hostapd_data *hapd,
 					struct sta_info *sta,
 					struct hostapd_if_frame_ctx *ctx)
 {
+#ifdef CONFIG_IEEE8021X_AUTH
 	u16 auth_transaction = ctx->data.auth_resp.auth_transaction;
+#endif
 	struct __hostapd_if_pmk *pmk = &ctx->data.auth_resp.pmk;
 
 	if (pmk->pmk) {
@@ -1459,9 +1461,12 @@ static void __send_802_1x_auth_response(struct hostapd_data *hapd,
 		tmp_entry->pmk_len = pmk_len;
 		if (pmk->pmkid)
 			os_memcpy(tmp_entry->pmkid, pmk->pmkid, PMKID_LEN);
+#ifdef CONFIG_IEEE8021X_AUTH
 		set_pmk_802_1x_auth(hapd, sta, auth_transaction, tmp_entry);
+#endif
 		os_free(tmp_entry);
 	} else {
+#ifdef CONFIG_IEEE8021X_AUTH
 		if (!hapd->conf->plugin_eap_offload)
 			/* Pass it through EAP State machine */
 			handle_auth_802_1x_eapol(hapd, sta);
@@ -1471,11 +1476,14 @@ static void __send_802_1x_auth_response(struct hostapd_data *hapd,
 					   WLAN_STATUS_SUCCESS, NULL,
 					   (const u8 *) ctx->data.auth_resp.eap,
 					   ctx->data.auth_resp.eap_len);
+#endif
 	}
 free_eap_ctx:
 	os_free(ctx->data.auth_resp.eap);
+#ifdef CONFIG_IEEE8021X_AUTH
 	os_free(sta->eap_auth_data.eapol_pdu);
 	sta->eap_auth_data.eapol_pdu = NULL;
+#endif
 }
 
 /*
@@ -2167,6 +2175,7 @@ int hostapd_if_get_ptk(char *ifname, uint8_t *sta_mac,
 	}
 
 	if (sta->auth_alg == WLAN_AUTH_802_1X) {
+#ifdef CONFIG_IEEE8021X_AUTH
 		os_memcpy(kck, sta->eap_auth_data.ptk.kck,
 			  sta->eap_auth_data.ptk.kck_len);
 		*kck_len = sta->eap_auth_data.ptk.kck_len;
@@ -2176,6 +2185,7 @@ int hostapd_if_get_ptk(char *ifname, uint8_t *sta_mac,
 		os_memcpy(tk, sta->eap_auth_data.ptk.tk,
 			  sta->eap_auth_data.ptk.tk_len);
 		*tk_len = sta->eap_auth_data.ptk.tk_len;
+#endif
 		return 0;
 	} else {
 		return wpa_auth_get_ptk_full(sta->wpa_sm, kck, kck_len, kek, kek_len,
@@ -2800,6 +2810,7 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 	}
 
 	if (sta->auth_alg == WLAN_AUTH_802_1X) {
+#ifdef CONFIG_IEEE8021X_AUTH
 		const uint8_t *eap;
 		size_t eap_len;
 
@@ -2822,6 +2833,7 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 		hapd->send_eap_req(hapd, sta, IEEE802_1X_TYPE_EAP_PACKET,
 				   auth_transaction + 1, WLAN_STATUS_SUCCESS,
 				   NULL, eap, eap_len);
+#endif
 	} else {
 		if (with_header) {
 			int link_id = -1;
