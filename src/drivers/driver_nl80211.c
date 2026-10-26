@@ -12122,6 +12122,12 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 	if (!freq && is_sta_interface(drv->nlmode))
 		offchanok = 0;
 
+#ifdef CONFIG_IEEE80211BN
+	if (data_len >= 2 && data[0] == WLAN_ACTION_PUBLIC &&
+	    mapc_action_frame(data[1]))
+		offchanok = 0;
+#endif /* CONFIG_IEEE80211BN */
+
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Send Action frame (ifindex=%d, freq=%u MHz wait=%d ms no_cck=%d offchanok=%d dst="
 		   MACSTR " src=" MACSTR " bssid=" MACSTR ", link_id=%d)",

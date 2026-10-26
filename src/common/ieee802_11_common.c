@@ -4589,3 +4589,18 @@ enum chan_width get_sta_operation_chan_width(
 
 	return ap_operation_chan_width;
 }
+
+#ifdef CONFIG_IEEE80211BN
+bool mapc_action_frame(u8 action_code)
+{
+	switch (action_code) {
+	case WLAN_PA_MAPC_DISCOVERY_REQ:
+	case WLAN_PA_MAPC_DISCOVERY_RESP:
+	case WLAN_PA_MAPC_NEGOTIATION_REQ:
+	case WLAN_PA_MAPC_NEGOTIATION_RESP:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif /* CONFIG_IEEE80211BN */

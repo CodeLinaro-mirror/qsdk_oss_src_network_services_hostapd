@@ -525,4 +525,8 @@ enum chan_width get_sta_operation_chan_width(
 /* Security Profile entry (IEEE 802.11bn D1.4, Table 9-bb14) */
 
 
+#ifdef CONFIG_IEEE80211BN
+bool mapc_action_frame(u8 action_code);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /* IEEE802_11_COMMON_H */
