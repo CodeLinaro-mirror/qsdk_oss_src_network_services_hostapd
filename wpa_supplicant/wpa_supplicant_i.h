@@ -1264,6 +1264,8 @@ struct wpa_supplicant {
 		bool ext_ml_auth;
 		int *sae_rejected_groups;
 #endif /* CONFIG_SAE */
+		int ext_pairwise_cipher;
+		int ext_auth_alg;
 		u16 assoc_auth_type;
 	} sme;
 #endif /* CONFIG_SME */

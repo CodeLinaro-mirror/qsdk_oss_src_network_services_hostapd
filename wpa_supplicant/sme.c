@@ -378,6 +378,21 @@ static struct wpabuf * sme_auth_build_sae_confirm(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_IEEE8021X_AUTH
 
+static const u8 * sme_get_peer_addr(struct wpa_supplicant *wpa_s, bool external)
+{
+	if (external)
+		return wpa_s->sme.ext_auth_bssid;
+	return wpa_s->pending_bssid;
+}
+
+
+static int sme_get_pairwise_cipher(struct wpa_supplicant *wpa_s, bool external)
+{
+	return external ? wpa_s->sme.ext_pairwise_cipher :
+		wpa_s->pairwise_cipher;
+}
+
+
 static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s || !wpa_s->auth_1x)
@@ -2567,6 +2582,21 @@ void sme_send_external_auth_status(struct wpa_supplicant *wpa_s, u16 status)
 	params.bssid = wpa_s->sme.ext_auth_bssid;
 	if (wpa_s->conf->sae_pmkid_in_assoc && status == WLAN_STATUS_SUCCESS)
 		params.pmkid = wpa_s->sme.sae.pmkid;
+#ifdef CONFIG_IEEE8021X_AUTH
+	if (status == WLAN_STATUS_SUCCESS &&
+	    wpa_s->sme.ext_auth_alg == WLAN_AUTH_802_1X) {
+		struct ptksa_cache_entry *entry;
+
+		entry = ptksa_cache_get(wpa_s->ptksa,
+					sme_get_peer_addr(wpa_s, true),
+					sme_get_pairwise_cipher(wpa_s, true));
+		if (entry && entry->ptk.kck_len) {
+			params.kck = entry->ptk.kck;
+			params.kck_len = entry->ptk.kck_len;
+		}
+	}
+#endif /* CONFIG_IEEE8021X_AUTH */
+
 	wpa_drv_send_external_auth_status(wpa_s, &params);
 }
 
