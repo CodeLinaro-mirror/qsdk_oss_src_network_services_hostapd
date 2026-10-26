@@ -1507,6 +1507,17 @@ struct wpa_ssid {
 	 */
 	int pmksa_privacy;
 
+#ifdef CONFIG_IEEE8021X_AUTH
+	/**
+	 * eap_over_auth_frame - IEEE 802.1X authentication in Authentication
+	 * frames
+	 * 0 = Disabled (i.e., use EAP in EAPOL frames) (default)
+	 * 1 = Enabled (i.e., use EAP in Authentication frames and encrypt
+	 *	associations frames)
+	 */
+	int eap_over_auth_frame;
+#endif /* CONFIG_IEEE8021X_AUTH */
+
 #ifdef CONFIG_PASN
 	/**
 	 * pasn_groups - Preference list of enabled groups for PASN

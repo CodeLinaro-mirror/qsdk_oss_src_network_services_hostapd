@@ -1089,6 +1089,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	INT(pmksa_privacy);
 #endif /* CONFIG_PMKSA_PRIVACY */
 	write_security_profiles(f, ssid);
+#ifdef CONFIG_IEEE8021X_AUTH
+	INT(eap_over_auth_frame);
+#endif /* CONFIG_IEEE8021X_AUTH */
 #undef STR
 #undef INT
 #undef INT_DEF
