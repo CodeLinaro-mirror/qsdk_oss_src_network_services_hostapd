@@ -1258,37 +1258,6 @@ void wpa_bss_flush(struct wpa_supplicant *wpa_s, bool all_bss)
 
 
 /**
- * wpa_bss_flush_by_mld_addr - Flush all BSS entries belonging to an AP MLD
- * @wpa_s: Pointer to wpa_supplicant data
- * @mld_addr: MLD MAC address whose affiliated BSS entries should be removed
- *
- * Removes every BSS table entry whose mld_addr matches @mld_addr, provided
- * the entry is not currently in use (e.g. not the current association or a
- * pending connect target).  This is used to invalidate stale per-link BSS
- * entries after an AP MLD restart that reassigns link IDs, so that the next
- * scan result is accepted cleanly instead of triggering a link-ID mismatch.
- */
-void wpa_bss_flush_by_mld_addr(struct wpa_supplicant *wpa_s,
-				const u8 *mld_addr)
-{
-	struct wpa_bss *bss, *n;
-
-	if (wpa_s->bss.next == NULL)
-		return; /* BSS table not yet initialized */
-
-	dl_list_for_each_safe(bss, n, &wpa_s->bss, struct wpa_bss, list) {
-		if (!bss->valid_links)
-			continue;
-		if (!ether_addr_equal(bss->mld_addr, mld_addr))
-			continue;
-		if (wpa_bss_in_use(wpa_s, bss))
-			continue;
-		wpa_bss_remove(wpa_s, bss, "MLD link ID changed");
-	}
-}
-
-
-/**
  * wpa_bss_deinit - Deinitialize BSS table
  * @wpa_s: Pointer to wpa_supplicant data
  */
@@ -2170,14 +2139,9 @@ u16 wpa_bss_get_usable_links(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		}
 
 		if (neigh_bss->mld_link_id != link_id) {
-			wpa_dbg(wpa_s, MSG_INFO,
-				"MLD: Neighbor has unexpected link ID (%d != %d) for "
-				MACSTR " - AP MLD " MACSTR
-				" likely restarted; flushing stale MLD BSS entries",
-				neigh_bss->mld_link_id, link_id,
-				MAC2STR(neigh_bss->bssid),
-				MAC2STR(neigh_bss->mld_addr));
-			wpa_bss_flush_by_mld_addr(wpa_s, neigh_bss->mld_addr);
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLD: Neighbor has unexpected link ID (%d != %d)",
+				neigh_bss->mld_link_id, link_id);
 			if (missing_links)
 				*missing_links |= BIT(link_id);
 			continue;
