@@ -1841,6 +1841,11 @@ PASNOBJS += src/eap_peer/eap_methods.c
 PASNOBJS += src/eapol_supp/eapol_supp_sm.c
 endif
 
+ifdef CONFIG_IEEE8021X_AUTH
+CONFIG_ENC_ASSOC=y
+L_CFLAGS += -DCONFIG_IEEE8021X_AUTH
+endif
+
 ifeq ($(CONFIG_TLS), openssl)
 PASNOBJS += src/crypto/crypto_openssl.c
 ifdef TLS_FUNCS
