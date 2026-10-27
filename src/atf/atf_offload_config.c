@@ -2260,7 +2260,7 @@ hostapd_ctrl_iface_atf_offload_addac(struct hostapd_data *hapd,
 		goto fail;
 	}
 
-	if (!group->is_configured || !group->user_cfg_airtime) {
+	if (!group->user_cfg_airtime) {
 		wpa_printf(MSG_ERROR,
 			   "ATF: Group %s has no airtime configured - run addssid/configatfgroup first\n",
 			   group->name);
@@ -2384,14 +2384,6 @@ hostapd_ctrl_iface_atf_offload_delac(struct hostapd_data *hapd,
 	if (!group) {
 		wpa_printf(MSG_ERROR,
 			   "ATF: Group/SSID %s not found\n", name);
-		ret = -1;
-		goto fail;
-	}
-
-	if (!group->is_configured) {
-		wpa_printf(MSG_ERROR,
-			   "ATF: Group %s has no airtime configured\n",
-			   group->name);
 		ret = -1;
 		goto fail;
 	}
