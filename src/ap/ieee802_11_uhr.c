@@ -3981,11 +3981,11 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 
 	if (ap_sta_set_authorized_flag(lhapd, sta, 1)) {
 		sta->flags_ext |= WLAN_STA_SMD;
-		hostapd_set_sta_flags(lhapd,sta);
+		hostapd_set_sta_flags(lhapd, sta);
+		ap_sta_set_authorized_event(lhapd, sta, 1);
 		wpa_printf(MSG_DEBUG, "Authorized the STA");
 	} else {
 		wpa_printf(MSG_DEBUG, "Could not send authorize to the STA - sending failure (TBD)");
-		
 	}
 
 	u32 role = 2;
