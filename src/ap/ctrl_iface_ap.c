@@ -1671,8 +1671,10 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 		res = os_snprintf(buf + len, buflen - len, "\n");
 
 		u8 *op_classes = sta->supp_op_classes + 1;
+		size_t op_classes_len = sta->supp_op_classes[0];
 
-		while (*op_classes != 0) {
+		for (size_t i = 0; i < op_classes_len && *op_classes != 0;
+		     i++) {
 			uint8_t uniiband = operclass_to_uniimask(*op_classes);
 			switch(uniiband) {
 			case BAND_UNII_1:
