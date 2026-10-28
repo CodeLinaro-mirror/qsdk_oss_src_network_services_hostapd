@@ -8644,7 +8644,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			setup_bss = hapd_iface->state == HAPD_IFACE_ENABLED;
 #ifdef CONFIG_QCN_EXTN
 			setup_bss |=
-				hostapd_bootup_cac_enabled_extn(hapd_iface);
+				hostapd_bootup_cac_enabled_extn(hapd_iface) &&
+				(hapd_iface->cac_started &&
+				 hapd_iface->cac_type ==
+				 HAPD_CAC_COMPLETE_AFTER_BSS);
 #endif /* CONFIG_QCN_EXTN */
 
 			if (setup_bss && hostapd_csa_in_progress(hapd_iface)) {
