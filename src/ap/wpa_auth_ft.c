@@ -2882,9 +2882,10 @@ static u8 * wpa_ft_process_rdie(struct wpa_state_machine *sm,
 		   id, descr_count);
 	wpa_hexdump(MSG_MSGDUMP, "FT: Resource descriptor IE(s)",
 		    ies, ies_len);
-	if (descr_count == 0) {
+	if (descr_count == 0 ||
+	    ieee802_11_ie_count(ies, ies_len) < descr_count) {
 		wpa_printf(MSG_DEBUG,
-			   "FT: Ignore invalid resource request with no Resource Descriptors");
+			   "FT: Ignore invalid resource request with no (or incomplete) Resource Descriptors");
 		return pos;
 	}
 
@@ -2903,9 +2904,7 @@ static u8 * wpa_ft_process_rdie(struct wpa_state_machine *sm,
 
 	if (ieee802_11_parse_elems((u8 *) ies, ies_len, &parse, 1) ==
 	    ParseFailed) {
-		wpa_printf(MSG_DEBUG, "FT: Failed to parse request IEs");
-		rdie->status_code =
-			host_to_le16(WLAN_STATUS_UNSPECIFIED_FAILURE);
+		wpa_printf(MSG_DEBUG, "FT: Failed to parse request elements - ignore Resource Request");
 		return pos;
 	}
 
