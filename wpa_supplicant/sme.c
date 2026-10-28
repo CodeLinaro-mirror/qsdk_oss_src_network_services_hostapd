@@ -3689,6 +3689,7 @@ mscs_fail:
 			 RSN_OVERRIDE_NOT_USED);
 	if (wpas_rsn_overriding(wpa_s, ssid) &&
 	    wpas_ap_supports_rsn_overriding(wpa_s, wpa_s->current_bss) &&
+	    !wpa_s->sel_security_profile &&
 	    wpa_s->sme.assoc_req_ie_len + 2 + 4 <=
 	    sizeof(wpa_s->sme.assoc_req_ie)) {
 		u8 *pos = wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len;
