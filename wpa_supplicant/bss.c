@@ -1894,6 +1894,16 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	const u8 *ies_pos = wpa_bss_ie_ptr(bss);
 	size_t ies_len = bss->ie_len ? bss->ie_len : bss->beacon_ie_len;
 
+	if (wpas_security_profile_active(wpa_s) && ssid->security_profiles) {
+		const u8 *sp;
+
+		/* A security profile match is sufficient to allow the link to
+		 * be used. */
+		sp = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE);
+		if (security_profile_select_best(sp, ssid->security_profiles))
+			return true;
+	}
+
 	if (ieee802_11_parse_elems(ies_pos, ies_len, &elems, 0) ==
 	    ParseFailed) {
 		wpa_dbg(wpa_s, MSG_DEBUG, "MLD: Failed to parse elements");
