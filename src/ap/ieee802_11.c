@@ -9490,10 +9490,22 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (sta && status_code == WLAN_STATUS_SUCCESS) {
+		size_t left = buf + buflen - p;
+
+		/* Try to minimize risk of running out of room for additional
+		 * elements after the FT related ones. */
+		if (left < 200) {
+			wpa_printf(MSG_DEBUG,
+				   "FT: Not enough room for (Re)Association Response frame elements");
+			res = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto done;
+		}
+		left -= 200;
+
 		/* IEEE 802.11r: Mobility Domain Information, Fast BSS
 		 * Transition Information, RSN, [RIC Response] */
 		p = wpa_sm_write_assoc_resp_ies(sta->wpa_sm, p,
-						buf + buflen - p,
+						left,
 						sta->auth_alg, ies, ies_len,
 						omit_rsnxe, reassoc,
 						sta->vlan_id);
