@@ -3319,13 +3319,11 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 
 	ric_start = pos;
 	if (wpa_ft_parse_ies(req_ies, req_ies_len, &parse,
-			     sm->wpa_key_mgmt, false) == 0 && parse.ric) {
+			     sm->wpa_key_mgmt, false) == 0 && parse.ric &&
+	    auth_alg == WLAN_AUTH_FT) {
 		pos = wpa_ft_process_ric(sm, pos, end, parse.ric,
 					 parse.ric_len);
-		if (auth_alg == WLAN_AUTH_FT)
-			*elem_count +=
-				ieee802_11_ie_count(ric_start,
-						    pos - ric_start);
+		*elem_count += ieee802_11_ie_count(ric_start, pos - ric_start);
 	}
 	if (ric_start == pos)
 		ric_start = NULL;
