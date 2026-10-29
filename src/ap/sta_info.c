@@ -1643,11 +1643,13 @@ static void ap_sta_disassoc_cb_timeout(void *eloop_ctx, void *timeout_ctx)
 
 
 static void ap_sta_disconnect_common(struct hostapd_data *hapd,
-				     struct sta_info *sta, unsigned int timeout,
+				     struct sta_info *sta, u16 reason,
+				     unsigned int timeout,
 				     bool free_1x)
 {
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
 
+	sta->disassoc_reason = reason;
 	ap_sta_set_authorized(hapd, sta, 0);
 	hostapd_set_sta_flags(hapd, sta);
 
@@ -1707,8 +1709,8 @@ static void ap_sta_handle_disassociate(struct hostapd_data *hapd,
 		sta->timeout_next = STA_DEAUTH;
 	}
 
-	ap_sta_disconnect_common(hapd, sta, AP_MAX_INACTIVITY_AFTER_DISASSOC,
-				 true);
+	ap_sta_disconnect_common(hapd, sta, reason,
+				 AP_MAX_INACTIVITY_AFTER_DISASSOC, true);
 	ap_sta_disassociate_common(hapd, sta, reason);
 }
 
@@ -1750,8 +1752,8 @@ static void ap_sta_handle_deauthenticate(struct hostapd_data *hapd,
 	sta->flags &= ~(WLAN_STA_AUTH | WLAN_STA_ASSOC | WLAN_STA_ASSOC_REQ_OK);
 
 	sta->timeout_next = STA_REMOVE;
-	ap_sta_disconnect_common(hapd, sta, AP_MAX_INACTIVITY_AFTER_DEAUTH,
-				 true);
+	ap_sta_disconnect_common(hapd, sta, reason,
+				 AP_MAX_INACTIVITY_AFTER_DEAUTH, true);
 	ap_sta_deauthenticate_common(hapd, sta, reason);
 }
 
@@ -1767,8 +1769,8 @@ static void ap_sta_handle_disconnect(struct hostapd_data *hapd,
 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
 	sta->timeout_next = STA_REMOVE;
 
-	ap_sta_disconnect_common(hapd, sta, AP_MAX_INACTIVITY_AFTER_DEAUTH,
-				 false);
+	ap_sta_disconnect_common(hapd, sta, reason,
+				 AP_MAX_INACTIVITY_AFTER_DEAUTH, false);
 	ap_sta_deauthenticate_common(hapd, sta, reason);
 }
 
