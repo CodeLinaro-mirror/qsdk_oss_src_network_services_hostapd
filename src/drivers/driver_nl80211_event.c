@@ -271,6 +271,8 @@ static void mlme_event_auth(struct wpa_driver_nl80211_data *drv,
 		event.auth.ies = mgmt->u.auth.variable;
 		event.auth.ies_len = len - 24 - sizeof(mgmt->u.auth);
 	}
+	event.auth.frame_body = (const u8 *) &mgmt->u.auth;
+	event.auth.frame_body_len = len - 24;
 
 	wpa_supplicant_event(drv->ctx, EVENT_AUTH, &event);
 }

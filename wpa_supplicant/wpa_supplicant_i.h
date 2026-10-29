@@ -745,6 +745,44 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
+#ifdef CONFIG_IEEE8021X_AUTH
+/**
+ * struct auth_802_1x_data - Data for IEEE 802.1X Authentication algorithm
+ * @auth_trans: Authentication transaction sequence number
+ * @status: Status code
+ * @derive_ptk: Whether to derive a PTK for association
+ * @pmksa_caching: Whether PMKSA caching is being used
+ * @pmkid_found: Whether PMKID is identified by AP
+ * @pmkid: PMKID for PMKSA caching
+ * @snonce: SNonce
+ * @anonce: ANonce
+ * @dh_group: DH group for key exchange
+ * @ecdh: ECDH context
+ * @dhss: DH shared secret
+ * @rsne: RSNE
+ * @rsne_len: Length of RSNE
+ * @rsnxe: RSNXE
+ * @rsnxe_len: Length of RSNXE
+ */
+struct auth_802_1x_data {
+	u16 auth_trans;
+	u16 status;
+	bool derive_ptk;
+	bool pmksa_caching;
+	bool pmkid_found;
+	u8 pmkid[PMKID_LEN];
+	u8 snonce[WPA_NONCE_LEN];
+	u8 anonce[WPA_NONCE_LEN];
+	u16 dh_group;
+	struct crypto_ecdh *ecdh;
+	struct wpabuf *dhss;
+	u8 rsne[257];
+	size_t rsne_len;
+	u8 rsnxe[257];
+	size_t rsnxe_len;
+};
+#endif /* CONFIG_IEEE8021X_AUTH */
+
 /**
  * enum sta_cac_result - Return values for wpas_sta_cac_start()
  * @STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
@@ -1226,6 +1264,8 @@ struct wpa_supplicant {
 		bool ext_ml_auth;
 		int *sae_rejected_groups;
 #endif /* CONFIG_SAE */
+		int ext_pairwise_cipher;
+		int ext_auth_alg;
 		u16 assoc_auth_type;
 	} sme;
 #endif /* CONFIG_SME */
@@ -1802,6 +1842,10 @@ struct wpa_supplicant {
 	bool wps_overlap;
 	bool scan_in_progress_6ghz; /* Set upon a 6 GHz scan being triggered */
 	bool missing_link_scan;
+
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct auth_802_1x_data *auth_1x;
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 #ifdef CONFIG_PASN
 	struct pasn_data pasn;

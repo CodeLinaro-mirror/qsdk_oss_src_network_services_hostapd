@@ -647,7 +647,9 @@ check_bootup_cac:
 	 * Bootup CAC: add MCST IE directly in the 5 GHz beacon so that
 	 * clients on the 5 GHz channel can see the remaining CAC time.
 	 */
-	if (hapd->conf->mld_ap && hapd->iface->bootup_cac_in_progress) {
+	if (hapd->conf->mld_ap &&
+	    hapd->iface->cac_started &&
+	    hapd->iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 		switch_time = hostapd_get_remaining_cac_tu(hapd->iface);
 		if (switch_time)
 			eid = hostapd_eid_add_max_cs_time(eid, switch_time);

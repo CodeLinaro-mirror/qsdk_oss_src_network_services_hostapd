@@ -122,121 +122,6 @@ static void pasn_fils_auth_resp(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BN
 
-/**
- * hostapd_parse_smd_ie - Parse SMD Information Element from authentication
- * @hapd: hostapd data
- * @sta: Station info
- * @ies: IEs buffer
- * @ies_len: Length of IEs buffer
- *
- * Parse and store SMD IE information from station's authentication request.
- */
-void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, const u8 *ies,
-				 size_t ies_len)
-{
-	const u8 *smd_ie;
-	const u8 *pos;
-	u8 smd_cap_byte;
-	const u8 *rsnxe;
-	size_t rsnxe_len;
-
-	if (!sta || !ies)
-		return;
-
-	/* Check if AP supports SMD and SMD is enabled in configuration */
-	if (!hapd->conf->smd.enabled) {
-		wpa_printf(MSG_DEBUG, "SMD IE Parse: SMD not enabled in AP configuration for " MACSTR,
-			   MAC2STR(sta->addr));
-		return;
-	}
-
-	if (!hapd->mld) {
-		wpa_printf(MSG_DEBUG, "SMD IE Parse: MLD not enabled in AP configuration for " MACSTR,
-			   MAC2STR(sta->addr));
-		return;
-	}
-
-	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
-		wpa_printf(MSG_DEBUG, "SMD IE Parse: Driver does not support SMD for " MACSTR,
-			   MAC2STR(sta->addr));
-		return;
-	}
-
-	/* Initialize SMD info */
-	os_memset(&sta->smd_info, 0, sizeof(sta->smd_info));
-
-	/* Look for SMD Information Element (Extension element) */
-	smd_ie = get_ie_ext(ies, ies_len, WLAN_EID_EXT_SMD);
-	if (!smd_ie) {
-		wpa_printf(MSG_DEBUG, "SMD IE: Not found in auth request from "
-			   MACSTR, MAC2STR(sta->addr));
-		return;
-	}
-
-	/* SMD IE format after Element ID Extension:
-	 * SMD Identifier: 6 octets
-	 * SMD Capabilities: 1 octet
-	 * Timeout Value: 1 octet (units of 64 TUs)
-	 * Total minimum length: 8 octets (+ 2 for EID and Len, + 1 for Ext ID)
-	 */
-	if (smd_ie[1] < 1 + 6 + 1 + 1) {
-		wpa_printf(MSG_DEBUG,
-			   "SMD IE: Invalid length %u from " MACSTR,
-			   smd_ie[1], MAC2STR(sta->addr));
-		return;
-	}
-
-	pos = smd_ie + 3; /* Skip Element ID, Length, and Extension ID */
-
-	/* SMD Identifier (6 octets) */
-	os_memcpy(sta->smd_info.smd_identifier, pos, ETH_ALEN);
-	pos += ETH_ALEN;
-
-	/* SMD Capabilities (1 octet)
-	 * B0: DL Data Forwarding
-	 * B1-B3: Max Number Of Prepared Target AP MLDs
-	 * B4: SMD Type
-	 * B5: PTK Mode
-	 * B6: Neighboring AP Probing Support
-	 * B7: Reserved
-	 */
-	smd_cap_byte = *pos++;
-	sta->smd_info.caps.dl_data_fwd = !!(smd_cap_byte & BIT(0));
-	sta->smd_info.caps.max_prep_target_apmlds = (smd_cap_byte >> 1) & 0x07;
-	sta->smd_info.caps.smd_type = !!(smd_cap_byte & BIT(4));
-	sta->smd_info.caps.ptk_mode = !!(smd_cap_byte & BIT(5));
-
-	/* Timeout Value (1 octet, units of 64 TUs) */
-	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
-
-	rsnxe_len = 0;
-	rsnxe = get_ie(ies, ies_len, WLAN_EID_RSNX);
-	if (rsnxe)
-		rsnxe_len = rsnxe[1];
-
-	sta->smd_info.smd_rsnx_bit =
-		ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SMD);
-	sta->smd_info.smd_enc_assoc =
-		ap_sta_support_enc_assoc(hapd, rsnxe ? rsnxe + 2 : NULL,
-					 rsnxe_len);
-
-	sta->smd_info.smd_sta = true;
-
-	os_memcpy(sta->smd_info.current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
-
-	wpa_printf(MSG_INFO,
-		   "SMD IE: Parsed from " MACSTR " - ID: " MACSTR
-		   ", DL Fwd: %d, Max Peer AP MLDs: %u, Type: %d, PTK Mode: %d, Timeout: %u TU",
-		   MAC2STR(sta->addr),
-		   MAC2STR(sta->smd_info.smd_identifier),
-		   sta->smd_info.caps.dl_data_fwd,
-		   sta->smd_info.caps.max_prep_target_apmlds,
-		   sta->smd_info.caps.smd_type,
-		   sta->smd_info.caps.ptk_mode,
-		   sta->smd_info.smd_timeout);
-	return;
-}
-
 static bool hostapd_smd_assoc_allowed(struct hostapd_data *hapd,
 				      struct sta_info *sta)
 {
@@ -5829,15 +5714,27 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_MBO */
 
 #ifdef CONFIG_IEEE80211BN
-	/* Parse SMD IE if present in authentication request */
 	if (auth_transaction == 1) {
 		const u8 *pos;
+		size_t ies_len;
 
 		pos = auth_skip_fixed_fields(hapd, mgmt,
 					     len - offsetof(struct ieee80211_mgmt, u.auth.variable));
-		if (pos)
-			hostapd_parse_smd_ie(hapd, sta, pos,
-					     (int)len - (pos - mgmt->u.auth.variable));
+		if (pos && hapd->conf->smd.enabled &&
+		    (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
+			const u8 *rsnxe;
+
+			ies_len = (int)len - (pos - mgmt->u.auth.variable);
+			rsnxe = get_ie(pos, ies_len, WLAN_EID_RSNX);
+			if (ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SMD)) {
+				wpa_printf(MSG_DEBUG,
+					   "SMD: auth from " MACSTR
+					   " has RSNXE bit 37 set - marking as SMD STA",
+					   MAC2STR(sta->addr));
+				sta->smd_info.smd_sta = true;
+				sta->smd_info.smd_rsnx_bit = true;
+			}
+		}
 
 		/* Transfer SMD info to wpa_state_machine if it exists */
 		if (sta->wpa_sm && sta->smd_info.smd_sta) {

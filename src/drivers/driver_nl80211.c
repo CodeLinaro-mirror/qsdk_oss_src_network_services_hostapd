@@ -4509,6 +4509,8 @@ static enum nl80211_auth_type get_nl_auth_type(int wpa_auth_alg)
 		return NL80211_AUTHTYPE_FILS_SK_PFS;
 	if (wpa_auth_alg & WPA_AUTH_ALG_EPPKE)
 		return NL80211_AUTHTYPE_EPPKE;
+	if (wpa_auth_alg & WPA_AUTH_ALG_802_1X)
+		return NL80211_AUTHTYPE_IEEE8021X;
 
 	return NL80211_AUTHTYPE_MAX + 1;
 }
@@ -8271,6 +8273,11 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 
 	wpa_printf(MSG_DEBUG, "nl80211: %s STA " MACSTR,
 		   cmd_string, MAC2STR(params->addr));
+#ifdef CONFIG_IEEE80211BN
+	if (params->smd_sta)
+		wpa_printf(MSG_DEBUG, "nl80211: sta_add " MACSTR " is SMD STA",
+			   MAC2STR(params->addr));
+#endif /* CONFIG_IEEE80211BN */
 	msg = nl80211_bss_msg(bss, 0, cmd);
 	if (!msg)
 		goto fail;
@@ -12834,6 +12841,10 @@ static int get_channel_width(struct nl_msg *msg, void *arg)
 	sig_change->center_frq2 = -1;
 	sig_change->chanwidth = CHAN_WIDTH_UNKNOWN;
 
+	if (tb[NL80211_ATTR_WIPHY_FREQ])
+		sig_change->frequency =
+			nla_get_u32(tb[NL80211_ATTR_WIPHY_FREQ]);
+
 	if (tb[NL80211_ATTR_CHANNEL_WIDTH]) {
 		sig_change->chanwidth = convert2width(
 			nla_get_u32(tb[NL80211_ATTR_CHANNEL_WIDTH]));
@@ -12970,6 +12981,10 @@ static int get_links_channel_width(struct nl_msg *msg, void *arg)
 		link_id = nla_get_u8(tb2[NL80211_ATTR_MLO_LINK_ID]);
 		if (link_id >= MAX_NUM_MLD_LINKS)
 			continue;
+
+		if (tb2[NL80211_ATTR_WIPHY_FREQ])
+			mlo_sig->links[link_id].frequency =
+				nla_get_u32(tb2[NL80211_ATTR_WIPHY_FREQ]);
 
 		if (!tb2[NL80211_ATTR_CHANNEL_WIDTH])
 			continue;
@@ -13202,6 +13217,11 @@ static void nl80211_global_deinit(void *priv)
 	struct nl80211_global *global = priv;
 	if (global == NULL)
 		return;
+
+	/* Clear the NL_CB_VALID callback before any teardown. */
+	if (global->nl_cb)
+		nl_cb_set(global->nl_cb, NL_CB_VALID, NL_CB_DEFAULT, NULL, NULL);
+
 	if (!dl_list_empty(&global->interfaces)) {
 		wpa_printf(MSG_ERROR, "nl80211: %u interface(s) remain at "
 			   "nl80211_global_deinit",
@@ -18269,7 +18289,10 @@ static int nl80211_send_external_auth_status(void *priv,
 			     PMKID_LEN, params->pmkid)) ||
 		    (params->bssid &&
 		     nla_put(msg, QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_BSSID,
-			     ETH_ALEN, params->bssid)))
+			     ETH_ALEN, params->bssid)) ||
+		    (params->kck && params->kck_len &&
+		     nla_put(msg, QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_PTK_KCK,
+			     params->kck_len, params->kck)))
 			goto fail;
 
 		nla_nest_end(msg, attr);

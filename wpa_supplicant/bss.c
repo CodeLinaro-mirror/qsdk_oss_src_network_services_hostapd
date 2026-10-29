@@ -2148,6 +2148,8 @@ u16 wpa_bss_get_usable_links(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"MLD: Neighbor has unexpected link ID (%d != %d)",
 				neigh_bss->mld_link_id, link_id);
+			if (missing_links)
+				*missing_links |= BIT(link_id);
 			continue;
 		}
 

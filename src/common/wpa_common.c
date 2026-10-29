@@ -487,8 +487,9 @@ int wpa_eapol_key_mic(const u8 *key, size_t key_len, int akmp,
  * @ptk: Buffer for pairwise transient key
  * @akmp: Negotiated AKM
  * @cipher: Negotiated pairwise cipher
+ * @z: Additional context data
+ * @z_len: Length of additional context data
  * @kdk_len: The length in octets that should be derived for KDK
- * @z: Optional Z.x data (may be %NULL if not used)
  * @smd_id: SMD Identifier (6 Octets) for Per-SMD PTK Derivation
  * Returns: 0 on success, -1 on failure
  *
@@ -499,7 +500,9 @@ int wpa_eapol_key_mic(const u8 *key, size_t key_len, int akmp,
  *             [ || Z.x ] [ || SMD_ID ])
  *
  * The optional Z.x component is used only with DPP and that part is not defined
- * in IEEE 802.11.
+ * in IEEE 802.11. The additional context data is also used to carry the DHss
+ * (Diffie-Hellman shared secret) when IEEE 802.1X authentication in
+ * Authentication frames is  used.
  */
 int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		   const u8 *addr1, const u8 *addr2,
@@ -3324,6 +3327,38 @@ int wpa_compare_rsn_ie(int ft_initial_assoc,
 			return 0;
 	}
 #endif /* CONFIG_IEEE80211R */
+
+	return -1;
+}
+
+
+/**
+ * wpa_compare_rsn_ie_params - Compare RSN IE parameters
+ * @rsne1: Pointer to first RSNE (with element ID and length)
+ * @rsne1_len: Length of the first RSNE
+ * @rsnee2: Pointer to second RSNE (with element ID and length)
+ * @rsne2_len: Length of the second RSNE
+ * Returns: 0 if parameters match, -1 otherwise
+ *
+ * Compare the security parameters (proto, ciphers, key_mgmt)
+ * of two RSN IEs.
+ */
+int wpa_compare_rsne_params(const u8 *rsne1, size_t rsne1_len,
+			    const u8 *rsne2, size_t rsne2_len)
+{
+	struct wpa_ie_data rsn1, rsn2;
+
+	if (!rsne1 || !rsne2)
+		return -1;
+
+	if (wpa_parse_wpa_ie_rsn(rsne1, rsne1_len, &rsn1) < 0 ||
+	    wpa_parse_wpa_ie_rsn(rsne2, rsne2_len, &rsn2) < 0)
+		return -1;
+
+	if (rsn1.proto == rsn2.proto &&
+	    rsn1.pairwise_cipher == rsn2.pairwise_cipher &&
+	    rsn1.key_mgmt == rsn2.key_mgmt)
+		return 0;
 
 	return -1;
 }

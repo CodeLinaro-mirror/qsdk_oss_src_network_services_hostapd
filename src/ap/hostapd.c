@@ -1508,6 +1508,59 @@ non_repurpose_link_remove:
 #endif /* CONFIG_IEEE80211BE */
 
 
+static void hostapd_ap_state_cache_update(struct hostapd_iface *iface)
+{
+	char path[128];
+	bool running = false;
+	size_t i;
+	int radio = -1;
+	int ret;
+	FILE *f;
+
+	if (!iface || !iface->phy[0] || !iface->conf || !iface->bss ||
+	    !iface->bss[0] || !iface->bss[0]->conf)
+		return;
+
+	if (iface->current_hw_info)
+		radio = iface->current_hw_info->hw_idx;
+	else
+		radio = iface->conf->radio_idx;
+	if (radio < 0)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i] && iface->bss[i]->started) {
+			running = true;
+			break;
+		}
+	}
+
+	ret = os_snprintf(path, sizeof(path),
+			  "/var/run/hostapd/ap_state_%s_%d",
+			  iface->phy, radio);
+	if (os_snprintf_error(sizeof(path), ret))
+		return;
+
+	if (running) {
+		f = fopen(path, "w");
+		if (!f) {
+			wpa_printf(MSG_ERROR,
+				   "hostapd: failed to update AP state cache %s: %s",
+				   path, strerror(errno));
+			return;
+		}
+		fclose(f);
+		return;
+	}
+
+	if (unlink(path) < 0 && errno != ENOENT) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd: failed to clear AP state cache %s: %s",
+			   path, strerror(errno));
+	}
+}
+
+
 void hostapd_free_hapd_data(struct hostapd_data *hapd)
 {
 	const bool skip_unstarted_bss_cleanup = !hapd->started;
@@ -1550,6 +1603,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	hapd->started = 0;
 	hapd->beacon_set_done = 0;
+	hostapd_ap_state_cache_update(hapd->iface);
 
 #ifdef CONFIG_MQTT
 	/*
@@ -1843,7 +1897,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_type = 0;
 #ifdef CONFIG_QCN_EXTN
 	iface->iface_extn.cac_abort = 0;
-	iface->bootup_cac_in_progress = 0;
 #endif
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
@@ -3261,6 +3314,7 @@ setup_mld:
 		return -1;
 
 	atf_offload_set_ssid_sched_policy(hapd);
+	hostapd_ap_state_cache_update(hapd->iface);
 	return 0;
 }
 
@@ -5897,7 +5951,7 @@ dfs_offload:
 	 * performing CAC. The transition to ENABLED happens in
 	 * hostapd_bootup_cac_complete_extn() once CAC finishes.
 	 */
-	if (!iface->bootup_cac_in_progress ||
+	if (!iface->cac_started ||
 	    hostapd_is_dfs_required(iface) <= 0) {
 #endif /* CONFIG_QCN_EXTN */
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
@@ -5960,7 +6014,8 @@ fail:
 #endif /* CONFIG_QCN_EXTN */
 	hostapd_ubus_free_iface(iface);
 #ifdef CONFIG_QCN_EXTN
-	iface->bootup_cac_in_progress = 0;
+	iface->cac_started = 0;
+	iface->cac_type = 0;
 #endif /* CONFIG_QCN_EXTN */
 
 	if (iface->is_no_ir) {
@@ -6879,11 +6934,12 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd,
 				multi_mbssid->num_mbssid_groups++;
 
 #ifdef CONFIG_QCN_EXTN
-			if (is_mesh_vap)
-				hostapd_mesh_mbssid_reserve_group_extn(multi_mbssid,
-									max_bssid_indicator,
-									&group_index,
-									&prefix_mask);
+			if (is_mesh_vap &&
+			    hostapd_mesh_mbssid_reserve_group_extn(multi_mbssid,
+								   max_bssid_indicator,
+								   &group_index,
+								   &prefix_mask))
+				return -1;
 #endif
 			if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
 				wpa_printf(MSG_ERROR,
@@ -8046,7 +8102,6 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		hapd->iface->cac_started = 0;
 #ifdef CONFIG_QCN_EXTN
 		hapd->iface->iface_extn.cac_abort = 0;
-		hapd->iface->bootup_cac_in_progress = 0;
 #endif
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
 		os_memset(&hapd->iface->radar_background, 0,
@@ -8199,7 +8254,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	if (hapd->started) {
 #ifdef CONFIG_QCN_EXTN
 		if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
-		    hapd_iface->bootup_cac_in_progress) {
+		    hapd_iface->cac_started) {
 			wpa_printf(MSG_DEBUG,
 				   "BSS %s already staged during CAC",
 				   hapd->conf->iface);
@@ -8233,7 +8288,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	/* Enable flow: HT scan -> CAC/DFS -> setup_bss. */
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
-	    hapd_iface->bootup_cac_in_progress) {
+	    hapd_iface->cac_started) {
 		wpa_printf(MSG_DEBUG,
 			   "CAC in progress: setting up BSS %s",
 			   hapd->conf->iface);
@@ -8243,6 +8298,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 
 	if (hapd_iface->cac_started) {
 		hapd->reenable = REENABLE_CAC;
+		hostapd_refresh_other_iface_beacons(hapd_iface);
 		wpa_printf(MSG_INFO, "CAC in progress, cannot enable BSS");
 		return 0;
 	}
@@ -8312,7 +8368,7 @@ setup_bss:
 	hapd->reenable = REENABLE_NONE;
 	hapd->disabled = 0;
 #ifdef CONFIG_QCN_EXTN
-	if (!hapd_iface->bootup_cac_in_progress)
+	if (!hapd_iface->cac_started)
 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 #else
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
@@ -9195,6 +9251,17 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 			continue;
 
 		bss = (j < hapd_iface->num_bss) ? hapd_iface->bss[j] : NULL;
+
+#ifdef CONFIG_IEEE80211BE
+		if (bss && bss->eht_mld_link_removal_inprogress) {
+			wpa_printf(MSG_INFO,
+				   "%s link %u has link removal in progress, skipping to next",
+				   bss->conf->iface, bss->mld_link_id);
+			bss = NULL;
+			found_bss = false;
+			continue;
+		}
+#endif /* CONFIG_IEEE80211BE */
 
 		if (!bss || !bss->conf) {
 #ifdef CONFIG_IEEE80211BE

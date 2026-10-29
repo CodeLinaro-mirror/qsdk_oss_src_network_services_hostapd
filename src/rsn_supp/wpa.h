@@ -307,6 +307,7 @@ void wpa_sm_set_ptk_kck_kek(struct wpa_sm *sm, enum rsn_hash_alg hash,
 			    const u8 *ptk_tk, size_t ptk_tk_len);
 int wpa_fils_is_completed(struct wpa_sm *sm);
 bool wpa_eppke_is_completed(struct wpa_sm *sm);
+bool wpa_eap_over_auth_frame_is_completed(struct wpa_sm *sm);
 void wpa_sm_pmksa_cache_reconfig(struct wpa_sm *sm);
 int wpa_sm_set_mlo_params(struct wpa_sm *sm, const struct wpa_sm_mlo *mlo);
 void wpa_sm_set_driver_bss_selection(struct wpa_sm *sm,
@@ -612,6 +613,11 @@ static inline bool wpa_eppke_is_completed(struct wpa_sm *sm)
 	return false;
 }
 
+static inline bool wpa_eap_over_auth_frame_is_completed(struct wpa_sm *sm)
+{
+	return false;
+}
+
 static inline void wpa_sm_pmksa_cache_reconfig(struct wpa_sm *sm)
 {
 }
@@ -783,5 +789,7 @@ void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
 void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm,
 				     const u8 *target_addr);
 bool wpa_sm_pmksa_privacy_supported(struct wpa_sm *sm);
+
+void wpa_sm_set_802_1x_auth_caps(struct wpa_sm *sm, u64 flags2);
 
 #endif /* WPA_H */

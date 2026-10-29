@@ -1940,6 +1940,7 @@ static bool wpas_ap_iface_running(struct wpa_supplicant *wpa_s)
 {
 #ifdef CONFIG_AP
 	struct hostapd_iface *iface;
+	size_t i;
 
 	if (!wpa_s)
 		return false;
@@ -1948,13 +1949,12 @@ static bool wpas_ap_iface_running(struct wpa_supplicant *wpa_s)
 	if (!iface || !iface->bss || !iface->bss[0])
 		return false;
 
-	switch (iface->state) {
-	case HAPD_IFACE_UNINITIALIZED:
-	case HAPD_IFACE_DISABLED:
-		return false;
-	default:
-		return true;
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i] && iface->bss[i]->started)
+			return true;
 	}
+
+	return false;
 #else /* CONFIG_AP */
 	return false;
 #endif /* CONFIG_AP */

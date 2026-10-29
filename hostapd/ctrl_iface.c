@@ -5403,6 +5403,12 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_ctrl_iface_validate_repeater_pwr_mode_extn(
+		    iface, he_6ghz_pwr_mode))
+		return -1;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!is_6ghz_freq(iface->freq)) {
 		wpa_printf(MSG_ERROR, "set_pwr_mode is only for 6 GHz");
 		return -1;
@@ -5770,11 +5776,7 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	hostapd_get_channel_switch_time(iface, &settings.freq_params);
 
-#ifdef CONFIG_QCN_EXTN
-	if (iface->cac_started || iface->bootup_cac_in_progress)
-#else
 	if (iface->cac_started)
-#endif /* CONFIG_QCN_EXTN */
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 
 	/*

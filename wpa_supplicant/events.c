@@ -4572,7 +4572,8 @@ static int wpas_rx_enc_assoc_resp(struct wpa_supplicant *wpa_s, const u8 *aa,
 	struct ptksa_cache_entry *entry;
 
 	entry = ptksa_cache_get(wpa_s->ptksa, aa, wpa_s->pairwise_cipher);
-	if (!entry || entry->auth_alg != WLAN_AUTH_EPPKE)
+	if (!entry || (entry->auth_alg != WLAN_AUTH_EPPKE &&
+		       entry->auth_alg != WLAN_AUTH_802_1X))
 		return 0;
 
 	wpa_sm_set_ptk_kck_kek(wpa_s->wpa, entry->ptk.hash_alg,
@@ -5793,6 +5794,9 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 	if (!ft_completed)
 		ft_completed = wpa_eppke_is_completed(wpa_s->wpa);
 
+	if (!ft_completed)
+		ft_completed = wpa_eap_over_auth_frame_is_completed(wpa_s->wpa);
+
 	wpa_supplicant_set_state(wpa_s, WPA_ASSOCIATED);
 	if (!ether_addr_equal(bssid, wpa_s->bssid)) {
 		if (os_reltime_initialized(&wpa_s->session_start)) {
@@ -5874,7 +5878,8 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 		struct rsn_pmksa_cache_entry *e;
 
 		e = pmksa_cache_get(t, addr, NULL, NULL, 0, wpa_s->key_mgmt);
-		if (e && e->auth_alg == WLAN_AUTH_EPPKE) {
+		if (e && (e->auth_alg == WLAN_AUTH_EPPKE ||
+			  e->auth_alg == WLAN_AUTH_802_1X)) {
 			rsn_pmkid_privacy(wpa_s->pmkid_anonce,
 					  wpa_s->pmkid_snonce,
 					  wpa_s->key_mgmt, e->pmk_len,

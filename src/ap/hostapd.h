@@ -924,8 +924,11 @@ struct hostapd_mld {
 
 /**
  * enum cac_completion_type - CAC completion context
- * @HAPD_CAC_COMPLETE_AFTER_BSS: CAC completed after a regular BSS
- *                               CAC procedure (non-CSA path).
+ * @HAPD_CAC_COMPLETE_AFTER_BSS: CAC started during boot-up (all BSSes
+ *   already created before CAC; the non-CSA path).
+ *   "boot-up CAC active" is now expressed as:
+ *     iface->cac_started == 1 &&
+ *     iface->cac_type   == HAPD_CAC_COMPLETE_AFTER_BSS
  * @HAPD_CAC_COMPLETE_AFTER_CSA: CAC completed after CSA
  *                               on a DFS target channel.
  */
@@ -973,10 +976,6 @@ struct hostapd_iface {
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
 	u32 vendor_bssid_used_mask;
 	u16 radar_bit_pattern_extn;
-	/* Set when boot-up CAC is active: all 5 GHz BSS were created before CAC
-	 * completed and vdev_up is deferred until CAC finishes.
-	 */
-	unsigned int bootup_cac_in_progress:1;
 #endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;

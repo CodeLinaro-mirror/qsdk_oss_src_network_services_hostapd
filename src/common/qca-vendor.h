@@ -24571,6 +24571,12 @@ enum qca_wlan_vendor_external_auth_action {
  *	for the authentication request event interface. This specifies the
  *	entire element data to be included in the RSNXE of the Authentication
  *	frames.
+ * @QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_PTK_KCK: Optional byte array attribute
+ *	for the authentication response command. This specifies the Key
+ *	Confirmation Key (KCK) that is to be used by the driver to compute
+ *	the MIC and append the MIC element in the (Re)Association Request
+ *	frame when IEEE 802.1X Authentication with (Re)Association frame
+ *	encryption is used.
  */
 enum qca_wlan_vendor_attr_external_auth {
 	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_INVALID = 0,
@@ -24587,6 +24593,7 @@ enum qca_wlan_vendor_attr_external_auth {
 	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_PMKID = 11,
 	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_RSN_CAPAB = 12,
 	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_RSNXE_DATA = 13,
+	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_PTK_KCK = 14,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_AFTER_LAST,
@@ -25724,6 +25731,9 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_LDPC = 108,
 	QCA_WLAN_VENDOR_VDEV_PARAM_TX_STBC = 109,
 	QCA_WLAN_VENDOR_VDEV_PARAM_RX_STBC = 110,
+	QCA_WLAN_VENDOR_VDEV_PARAM_VHT_11NG = 111,
+	QCA_WLAN_VENDOR_VDEV_PARAM_PEER_NSS = 112,
+
 	/* Add new params above */
 	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
 	QCA_WLAN_VENDOR_VDEV_PARAM_MAX = QCA_WLAN_VENDOR_VDEV_PARAM_LAST - 1,
@@ -25834,6 +25844,9 @@ enum qca_vendor_wlan_telemetry_tx_mon_stats_attr {
 	QCA_VENDOR_ATTR_TX_MON_STATS_CUSTOM_CALL_BACK_DELIVERED,
 	QCA_VENDOR_ATTR_TX_MON_STATS_SPC_BITMAP,
 	QCA_VENDOR_ATTR_TX_MON_STATS_SPC_PKT_COUNTS,
+	QCA_VENDOR_ATTR_TX_MON_STATS_MAX_SRNG_FILL_LVL,
+	QCA_VENDOR_ATTR_TX_MON_STATS_CURR_SRNG_FILL_LVL,
+	QCA_VENDOR_ATTR_TX_MON_STATS_NULL_MON_BUFS,
 
 	QCA_VENDOR_ATTR_TX_MON_STATS_AFTER_LAST,
 	QCA_VENDOR_ATTR_TX_MON_STATS_MAX =

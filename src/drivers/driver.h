@@ -3301,6 +3301,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN             0x0000200000000000ULL
 /** Driver supports PMKSA caching privacy */
 #define WPA_DRIVER_FLAGS2_PMKSA_PRIVACY		0x0000400000000000ULL
+/** Driver supports IEEE 802.1X authentication in Authentication frames */
+#define WPA_DRIVER_FLAGS2_802_1X_AUTH		0x0000000800000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -4100,6 +4102,9 @@ enum wpa_drv_update_connect_params_mask {
  * @rsn_capab: RSN capabilities
  * @rsnxe_data: Extended RSN capabilities data
  * @rsnxe_data_len: Length of Extended RSN capabilities data in octets
+ * @kck: Key Confirmation Key (KCK) to pass to driver for IEEE 802.1X
+ *	Authentication offload
+ * @kck_len: Length of the KCK
  */
 struct external_auth {
 	enum {
@@ -4120,6 +4125,9 @@ struct external_auth {
 	u16 rsn_capab;
 	const u8 *rsnxe_data;
 	size_t rsnxe_data_len;
+
+	const u8 *kck;
+	size_t kck_len;
 };
 
 #define WPAS_MAX_PASN_PEERS 10
@@ -8470,6 +8478,8 @@ union wpa_event_data {
 		u16 status_code;
 		const u8 *ies;
 		size_t ies_len;
+		const u8 *frame_body;
+		size_t frame_body_len;
 	} auth;
 
 	/**
