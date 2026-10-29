@@ -594,7 +594,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 		hostapd_set_generic_elem(hapd, (u8 *) "", 0);
 	}
 
-	hostapd_neighbor_sync_own_report(hapd);
+	hostapd_neighbor_sync_own_reports(hapd);
 
 	if (hapd->iface->current_mode) {
 		if (hostapd_prepare_rates(hapd, hapd->iface->current_mode)) {
@@ -5691,7 +5691,7 @@ dfs_offload:
 		iface->interfaces->terminate_on_error--;
 
 	for (j = 0; j < iface->num_bss; j++)
-		hostapd_neighbor_set_own_report(iface->bss[j]);
+		hostapd_neighbor_set_own_reports(iface->bss[j]);
 
 	/* OCE 4.3.1/4.3.2: start periodic channel survey timer */
 	hostapd_oce_survey_timer_start(iface);
@@ -7672,6 +7672,7 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		return 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
+	hostapd_neighbor_remove_mld_link_report(hapd);
 	hapd->disabled = 1;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", event);
 
@@ -7974,7 +7975,7 @@ setup_bss:
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 #endif
 
-	hostapd_neighbor_set_own_report(hapd);
+	hostapd_neighbor_set_own_reports(hapd);
 	if (i == hapd_iface->num_bss)
 		hostapd_interface_update_fils_ubpr(hapd_iface, true);
 
@@ -8018,6 +8019,7 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 #ifdef CONFIG_IEEE80211BN
 		mapc_deinit(hapd);
 #endif /* CONFIG_IEEE80211BN */
+		hostapd_neighbor_remove_mld_link_report(hapd);
 		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_bss_link_deinit(hapd);

@@ -22,6 +22,9 @@ int hostapd_neighbor_set(struct hostapd_data *hapd, const u8 *bssid,
 void hostapd_neighbor_set_own_report(struct hostapd_data *hapd);
 void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 					 struct hostapd_data *src);
+void hostapd_neighbor_set_own_reports(struct hostapd_data *hapd);
+int hostapd_neighbor_sync_own_reports(struct hostapd_data *hapd);
+void hostapd_neighbor_remove_mld_link_report(struct hostapd_data *src);
 int hostapd_prepare_neighbor_buf(struct hostapd_data *hapd,
 				 const u8 *bssid, struct wpabuf *nrbuf);
 int hostapd_neighbor_sync_own_report(struct hostapd_data *hapd);

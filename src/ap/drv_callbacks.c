@@ -1758,7 +1758,7 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 #endif
 
 	for (i = 0; i < hapd->iface->num_bss; i++)
-		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
+		hostapd_neighbor_set_own_reports(hapd->iface->bss[i]);
 
 #ifdef CONFIG_IEEE80211BN
 	if (hapd->smd_neighbor_update_ctx)
@@ -3827,6 +3827,7 @@ static void hostapd_iface_enable(struct hostapd_data *hapd)
 static void hostapd_iface_disable(struct hostapd_data *hapd)
 {
 	hostapd_free_stas(hapd);
+	hostapd_neighbor_remove_mld_link_report(hapd);
 	wpa_msg(hapd->msg_ctx, MSG_INFO, INTERFACE_DISABLED);
 	hapd->disabled = 1;
 }
