@@ -2782,10 +2782,13 @@ static enum phy_type ieee80211_phy_type_by_freq(int freq)
 
 
 /* ieee80211_get_phy_type - Derive the phy type by freq and bandwidth */
-enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht, int eht)
+enum phy_type ieee80211_get_phy_type(int freq, bool ht, bool vht, bool he,
+					bool eht)
 {
 	if (eht)
 		return PHY_TYPE_EHT;
+        if (he)
+                return PHY_TYPE_HE;
 	if (vht)
 		return PHY_TYPE_VHT;
 	if (ht)
@@ -4589,3 +4592,18 @@ enum chan_width get_sta_operation_chan_width(
 
 	return ap_operation_chan_width;
 }
+
+#ifdef CONFIG_IEEE80211BN
+bool mapc_action_frame(u8 action_code)
+{
+	switch (action_code) {
+	case WLAN_PA_MAPC_DISCOVERY_REQ:
+	case WLAN_PA_MAPC_DISCOVERY_RESP:
+	case WLAN_PA_MAPC_NEGOTIATION_REQ:
+	case WLAN_PA_MAPC_NEGOTIATION_RESP:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif /* CONFIG_IEEE80211BN */

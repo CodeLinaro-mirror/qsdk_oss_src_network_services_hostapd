@@ -3382,6 +3382,14 @@ static void hostapd_event_afc_update_complete(
 
 	is_connected_repeater = hostapd_iface_has_connected_backhaul_sta(iface);
 	if (is_connected_repeater) {
+		if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+			iface->is_afc_repeater_power_sync_pending = false;
+			wpa_printf(MSG_INFO,
+				   "AFC enterprise repeater response stored: waiting for user power mode selection iface=%s freq=%d",
+				   iface->phy, iface->freq);
+			return;
+		}
+
 		/*
 		 * Do not trigger a channel change while the backhaul STA is
 		 * connected. AFC response data is stored; defer power mode
@@ -4824,8 +4832,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		/* TODO: check this. hostapd_get_hw_features() initializes
 		 * too much stuff. */
 		/* hostapd_get_hw_features(hapd->iface); */
-		hostapd_channel_list_updated(
-			hapd->iface, data->channel_list_changed.initiator);
+		hostapd_channel_list_updated(hapd->iface, &data->channel_list_changed);
 		break;
 	case EVENT_DFS_CAC_STARTED:
 		if (!data)

@@ -1132,8 +1132,6 @@ struct hostapd_iface {
 #ifdef CONFIG_ACS
 	unsigned int acs_num_completed_scans;
 	unsigned int acs_num_retries;
-	/* Parallel scan: defer setup until all MLD partners complete ACS */
-	unsigned int acs_setup_deferred:1;
 #endif /* CONFIG_ACS */
 
 	void (*scan_cb)(struct hostapd_iface *iface);
@@ -1307,7 +1305,8 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface);
 int hostapd_add_iface(struct hapd_interfaces *ifaces, char *buf);
 int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface);
 int hostapd_remove_iface(struct hapd_interfaces *ifaces, char *buf);
-void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator);
+void hostapd_channel_list_updated(struct hostapd_iface *iface,
+				  const struct channel_list_changed *info);
 void hostapd_set_state(struct hostapd_iface *iface, enum hostapd_iface_state s);
 const char * hostapd_state_text(enum hostapd_iface_state s);
 int hostapd_csa_in_progress(struct hostapd_iface *iface);

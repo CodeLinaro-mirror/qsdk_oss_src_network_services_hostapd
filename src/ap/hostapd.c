@@ -4532,7 +4532,28 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 					    void *ctx)
 {
+	const struct channel_list_changed *info = ctx;
 	int ret;
+
+	if (info && iface->wait_channel_update &&
+	    iface->state == HAPD_IFACE_COUNTRY_UPDATE &&
+	    info->initiator == REGDOM_SET_BY_DRIVER &&
+	    info->type == REGDOM_TYPE_COUNTRY && info->alpha2[0]) {
+		if (os_memcmp(info->alpha2, iface->conf->country, 2)) {
+			wpa_printf(MSG_DEBUG,
+				   "Ignore stale driver country %.2s while waiting "
+				   "for %.2s on %s", info->alpha2,
+				   iface->conf->country, iface->phy);
+			return 0;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "Matching driver country %.2s received on %s, "
+			   "continue interface setup", info->alpha2, iface->phy);
+		eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
+		return setup_interface2(iface);
+	}
+
 #ifdef CONFIG_QCN_EXTN
 	bool afc_regd = false;
 
@@ -4678,9 +4699,10 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 }
 #endif
 
-void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
+void hostapd_channel_list_updated(struct hostapd_iface *iface,
+				  const struct channel_list_changed *info)
 {
-	if (initiator == REGDOM_SET_BY_DRIVER) {
+	if (info && info->initiator == REGDOM_SET_BY_DRIVER) {
 		const char *phy_name = hostapd_drv_get_radio_name(iface->bss[0]);
 
 		if (!phy_name)
@@ -4689,7 +4711,8 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 		wpa_printf(MSG_DEBUG, "Reg change event received for phy %s through %s",
 			   phy_name, iface->phy);
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
-					      hostapd_handle_regchannel_update, NULL);
+					      hostapd_handle_regchannel_update,
+					      (void *) info);
 #if defined(CONFIG_QCN_EXTN) && defined(HOSTAPD)
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
 					      hostapd_run_pending_repeater_afc_power_sync,
@@ -4698,7 +4721,8 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 		return;
 	}
 
-	if (!iface->wait_channel_update || initiator != REGDOM_SET_BY_USER)
+	if (!info || !iface->wait_channel_update ||
+	    info->initiator != REGDOM_SET_BY_USER)
 		return;
 
 	wpa_printf(MSG_DEBUG, "Channel list updated - continue setup");
@@ -8644,7 +8668,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			setup_bss = hapd_iface->state == HAPD_IFACE_ENABLED;
 #ifdef CONFIG_QCN_EXTN
 			setup_bss |=
-				hostapd_bootup_cac_enabled_extn(hapd_iface);
+				hostapd_bootup_cac_enabled_extn(hapd_iface) &&
+				(hapd_iface->cac_started &&
+				 hapd_iface->cac_type ==
+				 HAPD_CAC_COMPLETE_AFTER_BSS);
 #endif /* CONFIG_QCN_EXTN */
 
 			if (setup_bss && hostapd_csa_in_progress(hapd_iface)) {

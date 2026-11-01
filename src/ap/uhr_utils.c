@@ -291,6 +291,13 @@ void uhr_remove_ap_from_list_all_links(struct hostapd_data *hapd,
 	if (!hapd || !sta || !ap_mld_addr)
 		return;
 
+	if (!uhr_find_ap_in_list(sta, ap_mld_addr)) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR: AP " MACSTR " not in prep list, skipping cleanup",
+			   MAC2STR(ap_mld_addr));
+		return;
+	}
+
 	if (uhr_iap_send_st_roam_cleanup(hapd, ap_mld_addr, sta->addr) < 0)
 		wpa_printf(MSG_DEBUG,
 			   "UHR: Failed to send ROAM CLEANUP to " MACSTR

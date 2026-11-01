@@ -2010,6 +2010,32 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 }
 
 
+/*
+ * A link of an AP MLD with a hidden SSID sends a zero-length SSID in its
+ * Beacon, so its BSS entry cannot be found by SSID. The entry is still the
+ * link of the same AP MLD if it carries the MLD address of the association
+ * link BSS, which has the real SSID.
+ */
+static struct wpa_bss * wpa_bss_get_hidden_mld_link(struct wpa_supplicant *wpa_s,
+						    struct wpa_bss *bss,
+						    const u8 *link_bssid)
+{
+	struct wpa_bss *other;
+
+	if (!bss->ssid_len || is_zero_ether_addr(bss->mld_addr))
+		return NULL;
+
+	dl_list_for_each(other, &wpa_s->bss, struct wpa_bss, list) {
+		if (!other->ssid_len && other->valid_links &&
+		    ether_addr_equal(other->bssid, link_bssid) &&
+		    ether_addr_equal(other->mld_addr, bss->mld_addr))
+			return other;
+	}
+
+	return NULL;
+}
+
+
 /**
  * wpa_bss_get_usable_links - Retrieve the usable links of the AP MLD
  * @wpa_s: Pointer to wpa_supplicant data
@@ -2049,12 +2075,16 @@ u16 wpa_bss_get_usable_links(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		if (link_id == bss->mld_link_id)
 			continue;
 
-		if (ssid && ssid->ssid_len)
+		if (ssid && ssid->ssid_len) {
 			neigh_bss = wpa_bss_get(wpa_s,
 						bss->mld_links[link_id].bssid,
 						ssid->ssid,
 						ssid->ssid_len);
-		else
+			if (!neigh_bss)
+				neigh_bss = wpa_bss_get_hidden_mld_link(
+					wpa_s, bss,
+					bss->mld_links[link_id].bssid);
+		} else
 			neigh_bss = wpa_bss_get_bssid(wpa_s,
 						      bss->mld_links[link_id].bssid);
 
@@ -2125,8 +2155,14 @@ u16 wpa_bss_get_usable_links(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		 * Skip this check when the configured SSID is empty (hidden
 		 * SSID AP): in that case the AP legitimately broadcasts an
 		 * empty SSID in beacons and the BSS entry is valid.
+		 * Also skip it for a hidden link of the same AP MLD as the
+		 * association link BSS (found by MLD address above): the
+		 * kernel looks up non-association MLO links again without
+		 * the SSID, so such an entry is usable.
 		 */
-		if (neigh_bss->ssid_len == 0 && ssid && ssid->ssid_len) {
+		if (neigh_bss->ssid_len == 0 && ssid && ssid->ssid_len &&
+		    !(bss->ssid_len &&
+		      ether_addr_equal(neigh_bss->mld_addr, bss->mld_addr))) {
 			wpa_dbg(wpa_s, MSG_INFO,
 				"MLD: Link %u BSS entry has empty SSID (RNR stub), treating as missing",
 				link_id);

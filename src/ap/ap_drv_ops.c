@@ -1351,21 +1351,6 @@ static bool hostapd_is_action_frame_link_agnostic(const u8 *data, size_t len)
 }
 #endif /* CONFIG_IEEE80211BE */
 
-#ifdef CONFIG_IEEE80211BN
-static bool mapc_action_frame(u8 action_code)
-{
-	switch (action_code) {
-	case WLAN_PA_MAPC_DISCOVERY_REQ:
-	case WLAN_PA_MAPC_DISCOVERY_RESP:
-	case WLAN_PA_MAPC_NEGOTIATION_REQ:
-	case WLAN_PA_MAPC_NEGOTIATION_RESP:
-		return true;
-	default:
-		return false;
-	}
-}
-#endif /* CONFIG_IEEE80211BN */
-
 
 static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 				unsigned int wait, const u8 *dst,
