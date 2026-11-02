@@ -8283,7 +8283,8 @@ skip_wpa_ies:
 	mbo_ap_check_sta_assoc(hapd, sta, elems);
 
 	if (hapd->conf->mbo_enabled && (hapd->conf->wpa & 2) &&
-	    elems->mbo && sta->cell_capa && !(sta->flags & WLAN_STA_MFP) &&
+		elems->mbo && sta->cell_capa && !(sta->flags & WLAN_STA_MFP) &&
+		!(sta->flags & (WLAN_STA_WPS | WLAN_STA_MAYBE_WPS)) &&
 	    hapd->conf->ieee80211w != NO_MGMT_FRAME_PROTECTION) {
 		wpa_printf(MSG_INFO,
 			   "MBO: Reject WPA2 association without PMF");
