@@ -11022,9 +11022,6 @@ int hostapd_mld_remove_link(struct hostapd_data *hapd)
 	if (!mld)
 		return -1;
 
-	if (hapd->link.next == NULL || hapd->link.prev == NULL)
-		return -1;
-
 	/*
 	 * If the link was never added to the MLD list (e.g., failure during
 	 * interface add), we still need to release the allocated link ID.

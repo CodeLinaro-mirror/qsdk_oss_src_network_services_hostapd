@@ -2443,8 +2443,16 @@ int hostapd_is_usable_chans(struct hostapd_iface *iface)
 	central = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 
 	if (iface->current_mode->mode == HOSTAPD_MODE_IEEE80211A &&
-	    oper_chwidth != CONF_OPER_CHWIDTH_USE_HT && central)
+			oper_chwidth != CONF_OPER_CHWIDTH_USE_HT && central) {
+#ifdef CONFIG_QCN_EXTN
+		if (!(is_5ghz_freq(iface->freq) &&
+					oper_chwidth == CONF_OPER_CHWIDTH_320MHZ))
+			return hostapd_is_usable_chan_seg(iface);
+#else
+
 		return hostapd_is_usable_chan_seg(iface);
+#endif
+	}
 
 	err = hostapd_is_usable_chan(iface, pri_chan->freq, 1);
 	if (err <= 0) {
