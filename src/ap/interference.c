@@ -19,6 +19,27 @@
 #include "interference.h"
 #include "ubus.h"
 
+#ifndef CONFIG_QCN_EXTN
+
+bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
+				      int chan_width, int cf1, int cf2,
+				      u32 chan_bw_interference_bitmap)
+{
+	return -1;
+}
+
+int hostapd_intf_afc_received(struct hostapd_iface *iface)
+{
+	return -1;
+}
+
+#else /* CONFIG_QCN_EXTN */
+
 bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
 {
 	char *state = hostapd_ubus_bhsta_state(iface);
@@ -1872,3 +1893,5 @@ free_chan_data:
 
 	return ret;
 }
+
+#endif /* CONFIG_QCN_EXTN */

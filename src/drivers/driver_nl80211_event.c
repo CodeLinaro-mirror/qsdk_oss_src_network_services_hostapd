@@ -7111,6 +7111,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		break;
 #endif /* CONFIG_NAN */
 	case NL80211_CMD_INCUMBENT_SIGNAL_DETECT:
+	case NL80211_CMD_AWGN_DETECT:
 		nl80211_incumbt_sig_intf_event(bss, tb);
 		break;
 #ifdef CONFIG_PR

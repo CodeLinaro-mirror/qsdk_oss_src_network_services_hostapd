@@ -3418,7 +3418,9 @@ static void hostapd_event_afc_update_complete(
 				       NULL);
 	}
 }
+#endif /* CONFIG_QCN_EXTN */
 
+#ifdef HOSTAPD
 /*
   * The TBTT count to be passed as an argument to a function
   * to disable a BSS when it is part of an MLD (Multi Link Device)
@@ -3574,7 +3576,9 @@ hostapd_set_no_ir_state(struct hostapd_iface *iface)
 	hostapd_cleanup_iface_partial(iface);
 	hostapd_refresh_other_iface_beacons(iface);
 }
+#endif /* HOSTAPD */
 
+#ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_event_afc_payload_reset - Reset AFC payload of the hostapd.
  *
