@@ -3528,8 +3528,9 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 
 		if (hapd->conf->force_kdk_derivation ||
 		    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
-		     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
-					   WLAN_RSNX_CAPAB_SECURE_LTF)))
+		     ieee802_11_rsnx_capab_len(sta->eap_auth_data.rsnxe,
+					       sta->eap_auth_data.rsnxe_len,
+					       WLAN_RSNX_CAPAB_SECURE_LTF)))
 			kdk_len = WPA_KDK_MAX_LEN;
 		else
 			kdk_len = 0;
@@ -3739,8 +3740,9 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 
 			if (hapd->conf->force_kdk_derivation ||
 			    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
-			     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
-						   WLAN_RSNX_CAPAB_SECURE_LTF)))
+			     ieee802_11_rsnx_capab_len(sta->eap_auth_data.rsnxe,
+						       sta->eap_auth_data.rsnxe_len,
+						       WLAN_RSNX_CAPAB_SECURE_LTF)))
 				kdk_len = WPA_KDK_MAX_LEN;
 			else
 				kdk_len = 0;
