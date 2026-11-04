@@ -924,6 +924,97 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	hostapd_neighbor_set_own_report_for(hapd, hapd);
 }
 
+
+void hostapd_neighbor_set_own_reports(struct hostapd_data *hapd)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *dest;
+	struct hostapd_data *src;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!hapd)
+		return;
+
+	hostapd_neighbor_set_own_report(hapd);
+
+#ifdef CONFIG_IEEE80211BE
+	if (!hapd->started || hapd->disabled)
+		return;
+
+	if (!hapd->mld || !hostapd_is_multiple_link_mld(hapd))
+		return;
+
+	for_each_mld_link(dest, hapd) {
+		if (!dest->started || dest->disabled)
+			continue;
+
+		for_each_mld_link(src, hapd) {
+			if (!src->started || src->disabled)
+				continue;
+
+			hostapd_neighbor_set_own_report_for(dest, src);
+		}
+	}
+#else /* CONFIG_IEEE80211BE */
+	(void) hapd;
+#endif /* CONFIG_IEEE80211BE */
+}
+
+
+int hostapd_neighbor_sync_own_reports(struct hostapd_data *hapd)
+{
+	if (!hapd)
+		return -1;
+
+	hostapd_neighbor_sync_own_report(hapd);
+	hostapd_neighbor_set_own_reports(hapd);
+
+	return 0;
+}
+
+
+void hostapd_neighbor_remove_mld_link_report(struct hostapd_data *src)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *dest;
+	struct wpa_ssid_value ssid;
+
+	if (!src || !src->mld || !src->conf)
+		return;
+
+	ssid.ssid_len = src->conf->ssid.ssid_len;
+	os_memcpy(ssid.ssid, src->conf->ssid.ssid, ssid.ssid_len);
+
+	for_each_mld_link(dest, src) {
+		if (!dest->started || dest->disabled || dest == src)
+			continue;
+
+		hostapd_neighbor_remove(dest, src->own_addr, &ssid);
+	}
+#else /* CONFIG_IEEE80211BE */
+	(void) src;
+#endif /* CONFIG_IEEE80211BE */
+}
+
+
+static void
+hostapd_neighbor_set_iface_own_reports(struct hostapd_data *dest,
+				       struct hostapd_iface *iface)
+{
+	int i;
+
+	if (!dest || dest->disabled || !dest->started || !iface)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *src = iface->bss[i];
+
+		if (src && src->started && !src->disabled)
+			hostapd_neighbor_set_own_report_for(dest, src);
+	}
+}
+
+
 int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 			      u8 *links, u8 num_links,
 			      u8 *nei_rep, size_t nei_rep_len)
@@ -1239,10 +1330,11 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 				 int freq,
 				 struct wpa_scan_results *scan_res)
 {
-	struct wpa_ssid_value bss_ssid = *ssid;
+	bool ssid_filter = ssid->ssid_len ? true : false;
 	int i;
 
 	for (i = 0; i < scan_res->num; i++) {
+		struct wpa_ssid_value bss_ssid = *ssid;
 		struct wpa_scan_res *bss = scan_res->res[i];
 		struct ieee802_11_elems elems;
 		struct ieee80211_ht_operation *ht_oper = NULL;
@@ -1261,12 +1353,13 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 		if (ieee802_11_parse_elems((u8 *) (bss + 1), bss->ie_len,
 					   &elems, 0) == ParseFailed ||
 		    freq != bss->freq ||
-		    (bss_ssid.ssid_len &&
-		     (bss_ssid.ssid_len != elems.ssid_len ||
-		      os_memcmp(bss_ssid.ssid, elems.ssid, bss_ssid.ssid_len))))
+		    !elems.ssid_len ||
+		    (ssid_filter &&
+		     (ssid->ssid_len != elems.ssid_len ||
+		      os_memcmp(ssid->ssid, elems.ssid, ssid->ssid_len))))
 			continue;
 
-		if (!bss_ssid.ssid_len && elems.ssid_len) {
+		if (!ssid_filter && elems.ssid_len <= SSID_MAX_LEN) {
 			os_memcpy(bss_ssid.ssid, elems.ssid, elems.ssid_len);
 			bss_ssid.ssid_len = elems.ssid_len;
 		}
@@ -1473,16 +1566,20 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 						       hapd->iface->freq,
 						       scan_res);
 		wpa_scan_results_free(scan_res);
-		if (ret)
+		if (ret) {
+			hostapd_neighbor_set_own_reports(hapd);
+			hostapd_neighbor_set_iface_own_reports(hapd, hapd->iface);
 			return -1;
+		}
 	}
 
 	/* OCE 4.3.1/4.3.2: update channel info bits from driver scan cache */
 	if (OCE_AP_ENABLED(hapd))
 		hostapd_oce_update_channel_info(hapd);
 
-	/* Restore the AP's own neighbor report entry (cleared above) */
-	hostapd_neighbor_set_own_report(hapd);
+	/* Restore the AP's own, same-radio, and affiliated MLD-link reports */
+	hostapd_neighbor_set_own_reports(hapd);
+	hostapd_neighbor_set_iface_own_reports(hapd, hapd->iface);
 
 	if (!bands)
 		return 0;
@@ -1490,7 +1587,6 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 	/* Iterate over other radio interfaces and get the scan results */
 	for (i = 0; i < interfaces->count; i++) {
 		struct hostapd_iface *iface = interfaces->iface[i];
-		int j;
 
 		if (!iface)
 			continue;
@@ -1516,18 +1612,12 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 
 		/*
 		 * Scan results never include the scanning radio's own BSSIDs.
-		 * Inject an authoritative NR entry for every BSS on this
-		 * other-band interface into hapd's NR DB so that co-located
-		 * radios are visible to STAs as roam candidates
-		 * (e.g. 2.4/5/6 GHz in a 3-link MLO deployment).
+		 * Inject an authoritative NR entry for co-located BSSes on this
+		 * other-band interface into hapd's NR DB so that they are visible
+		 * to STAs as roam candidates. hostapd_neighbor_set_mld() replaces
+		 * an existing entry with the same BSSID and SSID.
 		 */
-		for (j = 0; j < iface->num_bss; j++) {
-			struct hostapd_data *other_hapd = iface->bss[j];
-
-			if (other_hapd && other_hapd->started)
-				hostapd_neighbor_set_own_report_for(hapd,
-								    other_hapd);
-		}
+		hostapd_neighbor_set_iface_own_reports(hapd, iface);
 	}
 
 #endif /* NEED_AP_MLME */
