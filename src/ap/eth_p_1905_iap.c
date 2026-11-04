@@ -636,7 +636,8 @@ static int decode_datapath_ctx_tlv(const u8 *val, u16 val_len,
 	 * PREP messages → CFG80211_ST_TYPE_PREP (0).
 	 */
 	out_smd_ctx->st_type = (msg_type == ETH_P_1905_SMD_ST_EXEC_REQ_MSG ||
-				msg_type == ETH_P_1905_SMD_ST_EXEC_REP_MSG) ? 1 : 0;
+				msg_type == ETH_P_1905_SMD_ST_EXEC_REP_MSG ||
+				msg_type == ETH_P_1905_SMD_ST_CTX_REP_MSG) ? 1 : 0;
 
 	return 0;
 }
@@ -1119,6 +1120,16 @@ struct wpabuf *eth_p_1905_iap_encode_exec_via_tgt_done(const struct uhr_iap_fram
 	return buf;
 }
 
+static bool smd_msg_sender_is_sap(u16 msg_type)
+{
+	/* Caller must pass a validated SMD message type. */
+	return msg_type == ETH_P_1905_SMD_ST_PREP_REQ_MSG ||
+		msg_type == ETH_P_1905_SMD_ST_EXEC_REQ_MSG ||
+		msg_type == ETH_P_1905_SMD_ST_PREP_CTX_MSG ||
+		msg_type == ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG ||
+		msg_type == ETH_P_1905_SMD_ST_CTX_REP_MSG;
+}
+
 /* -------------------------------------------------------------------------
  * SMD-specific 1905 message decode handler
  *
@@ -1280,36 +1291,13 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		return NULL;
 	}
 
-	/* Common header fields
-	 *
-	 * Determine sender role from TLV content rather than message type,
-	 * because EXEC_REQ and EXEC_RESP can flow in either direction:
-	 *
-	 *   SAP sends: SecCtx present, ClientId present, RoamCleanup present,
-	 *              or DatapathCtx-only (PREP_CTX — no ReconfFrame).
-	 *   TAP sends: ReconfFrame only (PREP_RESP, EXEC_REQ from TAP,
-	 *              EXEC_RESP from TAP).
-	 *
-	 * src_addr and dst_addr are already MLD addresses because
-	 * eth_p_1905_send() uses hapd->mld->mld_addr as the Ethernet SA.
-	 */
-	bool sender_is_sap = has_sec_ctx || has_datapath_ctx || has_client_id || has_roam_cleanup;
+	bool sender_is_sap = smd_msg_sender_is_sap(msg_type);
 
 	if (sender_is_sap) {
 		os_memcpy(iap->current_ap_mld_addr, src_addr, ETH_ALEN);
 		os_memcpy(iap->target_ap_mld_addr,  dst_addr, ETH_ALEN);
 	} else {
 		/* Sender is TAP */
-		os_memcpy(iap->target_ap_mld_addr,  src_addr, ETH_ALEN);
-		os_memcpy(iap->current_ap_mld_addr, dst_addr, ETH_ALEN);
-	}
-
-	/* CTX_REQ and EXEC_VIA_TGT_DONE are sent by the Target AP but carry a
-	 * Client Identifier TLV (which would set sender_is_sap=true above).
-	 * Override the assignment so target_ap_mld_addr always reflects the
-	 * actual sender. */
-	if (msg_type == ETH_P_1905_SMD_ST_CTX_REQ_MSG ||
-	    msg_type == ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG) {
 		os_memcpy(iap->target_ap_mld_addr,  src_addr, ETH_ALEN);
 		os_memcpy(iap->current_ap_mld_addr, dst_addr, ETH_ALEN);
 	}
