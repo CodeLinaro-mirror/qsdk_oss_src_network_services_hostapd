@@ -3788,6 +3788,7 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	u8 addr[ETH_ALEN];
 	const char *pos, *end;
 	int disassoc_timer = 0;
+	int disassoc_sta = 1;
 	struct sta_info *sta;
 	u8 req_mode = 0, valid_int = 0x01, dialog_token = 0x01;
 	u8 bss_term_dur[12];
@@ -3824,6 +3825,21 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 			wpa_printf(MSG_DEBUG, "Invalid disassoc_timer");
 			return -1;
 		}
+	}
+
+	pos = os_strstr(cmd, " disassoc_sta=");
+	if (pos) {
+		char *endptr;
+		long int value;
+
+		pos += 14;
+		value = strtol(pos, &endptr, 10);
+		if (endptr == pos || (*endptr && *endptr != ' ') ||
+		    (value != 0 && value != 1)) {
+			wpa_printf(MSG_DEBUG, "Invalid disassoc_sta");
+			return -1;
+		}
+		disassoc_sta = value;
 	}
 
 	pos = os_strstr(cmd, " valid_int=");
@@ -3963,6 +3979,7 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 #endif /* CONFIG_MBO */
 
 	ret = wnm_send_bss_tm_req(hapd, sta, req_mode, disassoc_timer,
+				  disassoc_sta,
 				  valid_int, bss_term_dur, dialog_token, url,
 				  nei_len ? nei_rep : NULL, nei_len,
 				  mbo_len ? mbo : NULL, mbo_len);

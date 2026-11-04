@@ -3895,7 +3895,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		bss_term_dur[2] = ev->tsf + total_us;
 		os_memset(&bss_term_dur[3], 0, 7); /* Optional */
 
-		wnm_send_bss_tm_req(hapd, NULL, req_mode, ev->link_removal_count,
+		wnm_send_bss_tm_req(hapd, NULL, req_mode, ev->link_removal_count, 1,
 				    0x01, &bss_term_dur[0], 0x01, NULL, NULL, 0,
 				    NULL, 0);
 #endif
