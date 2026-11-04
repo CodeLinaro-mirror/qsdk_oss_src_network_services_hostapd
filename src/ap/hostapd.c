@@ -10476,7 +10476,8 @@ int hostapd_abort_cac_for_channel_switch(struct hostapd_iface *iface,
 		goto force_chan_switch;
 
 	for (i = 0; i < iface->num_bss; i++) {
-		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv)
+		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv ||
+		    iface->bss[i]->disabled)
 			continue;
 
 		hapd = iface->bss[i];
