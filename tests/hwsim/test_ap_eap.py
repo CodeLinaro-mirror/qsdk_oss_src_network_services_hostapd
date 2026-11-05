@@ -108,15 +108,8 @@ def check_cert_probe_support(dev):
         raise HwsimSkip("Certificate probing not supported with this TLS library: " + tls)
 
 def check_ext_cert_check_support(dev):
-    if not openssl_imported:
-        raise HwsimSkip("OpenSSL python method not available")
-
     tls = dev.request("GET tls_library")
-    if tls.startswith("OpenSSL"):
-        return
-    elif tls.startswith("mbed TLS"):
-        return
-    else:
+    if not tls.startswith("OpenSSL"):
         raise HwsimSkip("ext_cert_check not supported with this TLS library: " + tls)
 
 def check_ocsp_support(dev):
