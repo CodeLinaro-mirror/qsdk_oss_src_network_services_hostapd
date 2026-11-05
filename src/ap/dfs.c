@@ -5260,6 +5260,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			hostapd_get_punct_bitmap(iface->bss[0]), radar_bitmap_oper);
 #endif
 
+	if (iface->conf->disable_csa_dfs)
+		return hostapd_dfs_radar_handle_disable_csa_dfs(iface);
+
 	/*
 	 * Select the channel-switch target in the following order:
 	 * 1. Puncturing on current operating channel.
@@ -5309,9 +5312,6 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	/* Radar detected on non-operating portion. No action needed. */
 	if (radar_bitmap && !radar_bitmap_oper)
 		return 0;
-
-	if (iface->conf->disable_csa_dfs)
-		return hostapd_dfs_radar_handle_disable_csa_dfs(iface);
 
 	if (iface->skip_mesh_dfs)
 		return 0;
