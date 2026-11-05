@@ -2981,8 +2981,9 @@ static void hostapd_event_dfs_cac_started(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS offload CAC started on %d MHz", radar->freq);
 	hostapd_dfs_start_cac(hapd->iface, radar->freq, radar->ht_enabled,
 			      radar->chan_offset, radar->chan_width,
-			      radar->cf1, radar->cf2, radar->is_background,
-			      radar->chan_width_device, radar->cf_device);
+			      radar->cf1, radar->cf2, radar->radar_bitmap,
+			      radar->is_background, radar->chan_width_device,
+			      radar->cf_device);
     radar->is_dfs_event_on_curr_hw = true;
 }
 

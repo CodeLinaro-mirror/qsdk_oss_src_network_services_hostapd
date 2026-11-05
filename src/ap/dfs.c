@@ -5975,13 +5975,28 @@ int hostapd_is_dfs_required(struct hostapd_iface *iface)
 
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
-			  int cf1, int cf2, bool is_background,
+			  int cf1, int cf2, u16 radar_bitmap, bool is_background,
 			  int chan_width_device, int cf_device)
 {
 	int n_chans, n_chans1, ch_idx, ch_idx_1, dfs_cac_ms;
 	int chwidth;
 	u8 channel_no, cf1_ch_no;
 	bool is_background_event = hostapd_dfs_is_background_event(iface, freq);
+	struct hostapd_channel_data *chan;
+
+	/*
+	 * If this sub-channel is punctured (DFS puncturing), this CAC-started
+	 * event is for the punctured CAC hostapd requested on NOL expiry.
+	 * Hence, skip the normal operating-channel CAC-start path.
+	 */
+	chan = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan && chan->puncture_source != DFS_CHAN_PUNC_NONE) {
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
+			"Punctured CAC on freq=%d chan=%d chan_offset=%d width=%d seg0=%d seg1=%d radar_bitmap: 0x%x puncture_source: %d chan_width_device=%d cf_device=%d",
+			freq, (freq - 5000) / 5, chan_offset, chan_width, cf1, cf2,
+			radar_bitmap, chan->puncture_source, chan_width_device, cf_device);
+		return 0;
+	}
 
 	if (is_background || is_background_event) {
 		iface->radar_background.cac_started = 1;
