@@ -5735,6 +5735,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			hostapd_npca_auto_select(iface);
 #endif /* CONFIG_IEEE80211BN && CONFIG_ACS */
 
+#if 0
 #ifdef CONFIG_IEEE80211AX
 		/* Check AFC for 6 GHz channels. */
 		res = hostapd_afc_handle_request(iface);
@@ -5744,7 +5745,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			return res;
 		}
 #endif /* CONFIG_IEEE80211AX */
-
+#endif
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
 			enum chan_width ch_width;
