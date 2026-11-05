@@ -4602,9 +4602,8 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					wpa_printf(MSG_DEBUG,
 							"MLD: Reported link not part of current MLD");
 				} else {
-					struct wpa_scan_results *scan_res;
 					struct wpa_bss *pbss =
-						wpa_bss_get_bssid(wpa_s, data);
+						wpa_bss_get_bssid(wpa_s, bssid);
 					struct wpa_scan_results *p_scan_res = NULL;
 					bool pbss_tmp = false;
 					int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
@@ -4634,12 +4633,18 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						goto cont;
 					}
 
+					/* Queue discovery before the BSS fallback can
+					 * exit when both caches lack the partner. */
+					p_scan_res = wpa_drv_get_scan_results(wpa_s, bssid);
+					if (p_scan_res && !p_scan_res->num &&
+					    j < MAX_NUM_MLD_LINKS - 1)
+						freqs[j++] = partner_freq;
+
 					if (!pbss) {
 						struct wpa_scan_res *partner_res = NULL;
 
-						p_scan_res = wpa_drv_get_scan_results(wpa_s, data);
 						if (p_scan_res && p_scan_res->num)
-							partner_res = wpa_scan_get_bssid(p_scan_res, data);
+							partner_res = wpa_scan_get_bssid(p_scan_res, bssid);
 						if (partner_res) {
 							pbss = wpa_bss_alloc_from_scan_res(wpa_s,
 											   partner_res);
@@ -4669,6 +4674,7 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					if (!wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"ML RNR 6 GHz Power Mode mismatch - Ignore");
+						non_assoc_links &= ~BIT(link_id);
 						if (pbss_tmp)
 							os_free(pbss);
 						if (p_scan_res)
@@ -4682,6 +4688,7 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						wpa_printf(MSG_DEBUG,
 							   "ML RNR 5G NOL channel - Skip link %d (freq=%d)",
 							   link_id, partner_freq);
+						non_assoc_links &= ~BIT(link_id);
 						if (pbss_tmp)
 							os_free(pbss);
 						if (p_scan_res)
@@ -4694,16 +4701,6 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						os_free(pbss);
 					if (p_scan_res)
 						wpa_scan_results_free(p_scan_res);
-
-					scan_res = wpa_drv_get_scan_results(wpa_s, bssid);
-
-					if (scan_res == NULL)
-						return ret;
-
-					if (scan_res && !scan_res->num) {
-						freqs[j] = partner_freq;
-						j++;
-					}
 				}
 
 cont:
@@ -4743,6 +4740,14 @@ cont:
 		ret = wpa_drv_scan(wpa_s, &scan);
 
 		if (ret) {
+			/* Reset missing_link_scan flag if scan trigger fails.
+			 * missing_link_scan is reset only when scan results event
+			 * is received. Until that, it eloops in scan rnr result process
+			 * and doesn't deauth, stays in old(less) link connection
+			 */
+			if (ret == -EBUSY)
+				wpa_s->missing_link_scan = false;
+
 			if (wpa_s->wpa_state == WPA_SCANNING)
 				wpa_supplicant_set_state(wpa_s,
 							 wpa_s->scan_prev_wpa_state);
