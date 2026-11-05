@@ -396,8 +396,7 @@ int hostapd_set_sta_flags(struct hostapd_data *hapd, struct sta_info *sta)
 	int set_flags, total_flags, flags_and, flags_or;
 	total_flags = hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext);
 	set_flags = WPA_STA_SHORT_PREAMBLE | WPA_STA_WMM | WPA_STA_MFP |
-		WPA_STA_ASSOCIATED | WPA_STA_AUTHORIZED | WPA_STA_CFP |
-		WPA_STA_SMD;
+		WPA_STA_AUTHORIZED | WPA_STA_CFP | WPA_STA_SMD;
 
 #ifdef CONFIG_IEEE80211BN
 	if (sta->smd_info.smd_sta)
