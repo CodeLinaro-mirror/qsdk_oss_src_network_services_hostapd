@@ -356,25 +356,9 @@ bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
 
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
 {
-	if (!hapd->iconf->mbssid)
-		return 0;
-
-	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		struct hostapd_data *bss;
-		struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
-		unsigned int i = 0;
-
-		if (!group)
-			return 0;
-		dl_list_for_each(bss, &group->bss_list,
-				 struct hostapd_data, mbssid_bss) {
-			if (bss == hapd)
-				return i;
-			i++;
-		}
-	}
-
-	return hapd->mbssid_idx;
+	if (hapd->iconf->mbssid)
+		return hapd->mbssid_idx;
+	return 0;
 }
 
 struct hostapd_data *
