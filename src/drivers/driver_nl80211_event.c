@@ -4898,8 +4898,7 @@ qca_nl80211_iface_reload(struct i802_bss *bss, u8 *data, size_t len)
 
 #define NUM_6GHZ_OPCLASS 7
 
-#ifdef CONFIG_DRIVER_NL80211_QCA
-int qca_nl80211_chain_mask_changed_event(struct i802_bss *bss, u8 *data,
+static int qca_nl80211_chain_mask_changed_event(struct i802_bss *bss, u8 *data,
 						 size_t len)
 {
 	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX + 1];
@@ -4920,7 +4919,6 @@ int qca_nl80211_chain_mask_changed_event(struct i802_bss *bss, u8 *data,
 	return nl80211_update_beacons_on_chain_mask_change(bss, hw_idx,
 							   ifindex);
 }
-#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
 {
@@ -5428,10 +5426,10 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_ROAM_STATUS:
 		qca_nl80211_roam_status_event(bss->drv, data, len);
 		break;
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 	case QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED:
 		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
-#endif /* CONFIG_DRIVER_NL80211_QCA */
 #ifdef CONFIG_PASN
 	case QCA_NL80211_VENDOR_SUBCMD_PASN:
 		qca_nl80211_pasn_auth(bss, data, len);
