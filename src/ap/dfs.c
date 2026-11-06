@@ -31,7 +31,12 @@
 #endif
 #include "hw_features.h"
 
-#define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
+#define IEEE80211_DFS_MIN_CAC_TIME_MS		60000
+#define IEEE80211_PUNCT_CAC_TIME_MS		(62 * 1000)       /* FCC: 60s + 2s */
+#define IEEE80211_PUNCT_ETSI_CAC_TIME_MS	(6 * 60 * 1000)   /* ETSI: 6 min */
+#define IEEE80211_PUNCT_ETSI_WEATHER_CAC_TIME_MS (60 * 60 * 1000) /* ETSI weather: 60 min */
+#define IEEE80211_WEATHER_RADAR_BAND_LOW_MHZ	5580
+#define IEEE80211_WEATHER_RADAR_BAND_HIGH_MHZ	5640
 
 /**
  * struct hostapd_dfs_next_radar_channel - Next-radar CSA/CAC target.
@@ -5973,6 +5978,33 @@ int hostapd_is_dfs_required(struct hostapd_iface *iface)
 }
 
 
+/**
+ * hostapd_get_punct_cac_time - Get CAC duration for a punctured sub-channel
+ * @iface: Pointer to the hostapd interface
+ * @freq: Center frequency (MHz) of the punctured sub-channel
+ *
+ * Mirrors the kernel's ieee80211_get_punct_cac_time() logic using hostapd's
+ * regulatory domain state instead of cfg80211's regulatory_pre_cac_allowed().
+ *
+ * Returns: CAC duration in milliseconds:
+ *   - IEEE80211_PUNCT_CAC_TIME_MS for non-ETSI (e.g. FCC)
+ *   - IEEE80211_PUNCT_ETSI_WEATHER_CAC_TIME_MS for ETSI weather radar band
+ *   - IEEE80211_PUNCT_ETSI_CAC_TIME_MS for all other ETSI channels
+ */
+static unsigned int hostapd_get_punct_cac_time(struct hostapd_iface *iface,
+					       int freq)
+{
+	if (iface->dfs_domain != HOSTAPD_DFS_REGION_ETSI)
+		return IEEE80211_PUNCT_CAC_TIME_MS;
+
+	if (freq >= IEEE80211_WEATHER_RADAR_BAND_LOW_MHZ &&
+	    freq <= IEEE80211_WEATHER_RADAR_BAND_HIGH_MHZ)
+		return IEEE80211_PUNCT_ETSI_WEATHER_CAC_TIME_MS;
+
+	return IEEE80211_PUNCT_ETSI_CAC_TIME_MS;
+}
+
+
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
 			  int cf1, int cf2, u16 radar_bitmap, bool is_background,
@@ -5992,9 +6024,10 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 	chan = hw_mode_get_channel(iface->current_mode, freq, NULL);
 	if (chan && chan->puncture_source != DFS_CHAN_PUNC_NONE) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
-			"Punctured CAC on freq=%d chan=%d chan_offset=%d width=%d seg0=%d seg1=%d radar_bitmap: 0x%x puncture_source: %d chan_width_device=%d cf_device=%d",
+			"Punctured CAC on freq=%d chan=%d chan_offset=%d width=%d seg0=%d seg1=%d radar_bitmap: 0x%x puncture_source: %d chan_width_device=%d cf_device=%d cac_time=%us",
 			freq, (freq - 5000) / 5, chan_offset, chan_width, cf1, cf2,
-			radar_bitmap, chan->puncture_source, chan_width_device, cf_device);
+			radar_bitmap, chan->puncture_source, chan_width_device, cf_device,
+			hostapd_get_punct_cac_time(iface, freq) / 1000);
 		return 0;
 	}
 
