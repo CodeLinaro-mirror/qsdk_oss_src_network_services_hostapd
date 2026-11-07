@@ -3934,7 +3934,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "ess_disassoc", hostapd_cli_cmd_ess_disassoc, NULL,
 	  "= send ESS Dissassociation Imminent notification" },
 	{ "bss_tm_req", hostapd_cli_cmd_bss_tm_req, NULL,
-	  "= send BSS Transition Management Request" },
+	  "= send BSS Transition Management Request (optional disassoc_sta=0|1)" },
 	{ "get_config", hostapd_cli_cmd_get_config, NULL,
 	  "= show current configuration" },
 	{ "dump_tk", hostapd_cli_cmd_dump_tk, NULL,

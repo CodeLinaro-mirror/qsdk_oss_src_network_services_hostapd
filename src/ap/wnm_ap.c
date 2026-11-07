@@ -1277,7 +1277,8 @@ int wnm_send_ess_disassoc_imminent(struct hostapd_data *hapd,
 
 
 int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
-			u8 req_mode, int disassoc_timer, u8 valid_int,
+			u8 req_mode, int disassoc_timer, int disassoc_sta,
+			u8 valid_int,
 			const u8 *bss_term_dur, u8 dialog_token,
 			const char *url, const u8 *nei_rep, size_t nei_rep_len,
 			const u8 *mbo_attrs, size_t mbo_len)
@@ -1366,7 +1367,7 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	 * subelement, start per-link disassoc only on affiliated links NOT present
 	 * in the union of Common-Info Own Link-ID and Per-STA Profile Link-IDs.
 	 */
-	if (ap_sta_is_mld(hapd, sta) &&
+	if (disassoc_sta && ap_sta_is_mld(hapd, sta) &&
 	    (req_mode & WNM_BSS_TM_REQ_DISASSOC_IMMINENT) &&
 	    nei_rep && nei_rep_len) {
 		u32 pref_links =
@@ -1399,7 +1400,7 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	if (disassoc_timer && sta) {
+	if (disassoc_sta && disassoc_timer && sta) {
 #ifdef CONFIG_IEEE80211BE
 		/* Link removal is scheduled only when the Link Removal Imminent
 		 * field is set to 1 in BTM as per IEEE Std 802.11be-2024,
