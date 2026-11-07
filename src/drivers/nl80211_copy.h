@@ -7899,12 +7899,6 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
-<<<<<<< HEAD   (a64e3c UPSTREAM:PROTOCOL:HOSTAPD: Send CAC abort command on an enab)
-	NL80211_EXT_FEATURE_EPPKE,
-	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
-
-=======
->>>>>>> CHANGE (21026c QSDK:PROTOCOL:hostapd:PKG_UPGRADE: Sync nl80211 to latest)
 	/* Parallel hardware scan: driver supports concurrent hw_scan contexts
 	 * on different radios simultaneously.
 	 */
