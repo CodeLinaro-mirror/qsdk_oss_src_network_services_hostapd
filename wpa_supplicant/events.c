@@ -4593,7 +4593,12 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 		if (wpa_supplicant_check_hop_count(data->assoc_info.resp_ies,
 						   data->assoc_info.resp_ies_len) < 0) {
 			wpa_printf(MSG_WARNING, "Association rejected due to invalid hop count");
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLO: Include partner link BSSIDs after hop-count rejection (valid_links=0x%x)",
+				wpa_s->valid_links);
+			wpa_s->assoc_failure_include_mlo_links = true;
 			wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_INVALID_IE);
+			wpa_s->assoc_failure_include_mlo_links = false;
 			/* Clear any partial association state */
 			wpa_sm_notify_disassoc(wpa_s->wpa);
 			return -1;
@@ -6103,6 +6108,11 @@ static void wpa_supplicant_event_disassoc_finish(struct wpa_supplicant *wpa_s,
 						 int locally_generated)
 {
 	const u8 *bssid;
+	const u8 *link_bssids[MAX_NUM_MLD_LINKS + 1];
+	int num_link_bssids = 0;
+	int i;
+	bool assoc_failure_include_mlo_links =
+		wpa_s->assoc_failure_include_mlo_links;
 	struct wpa_bss *fast_reconnect = NULL;
 	struct wpa_ssid *fast_reconnect_ssid = NULL;
 	struct wpa_bss *curr = NULL;
@@ -6175,8 +6185,30 @@ static void wpa_supplicant_event_disassoc_finish(struct wpa_supplicant *wpa_s,
 	bssid = wpa_s->bssid;
 	if (is_zero_ether_addr(bssid))
 		bssid = wpa_s->pending_bssid;
-	if (wpa_s->wpa_state >= WPA_AUTHENTICATING)
-		wpas_connection_failed(wpa_s, bssid, NULL);
+	if (assoc_failure_include_mlo_links) {
+		wpa_s->assoc_failure_include_mlo_links = false;
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			if (!(wpa_s->valid_links & BIT(i)) ||
+			    is_zero_ether_addr(wpa_s->links[i].bssid) ||
+			    ether_addr_equal(wpa_s->links[i].bssid, bssid))
+				continue;
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLO: Add partner link_id=%d BSSID " MACSTR " to connection-failure list",
+				i, MAC2STR(wpa_s->links[i].bssid));
+			link_bssids[num_link_bssids++] = wpa_s->links[i].bssid;
+		}
+		link_bssids[num_link_bssids] = NULL;
+	}
+	if (wpa_s->wpa_state >= WPA_AUTHENTICATING) {
+		if (assoc_failure_include_mlo_links)
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLO: Pass %d partner BSSIDs with primary BSSID " MACSTR " to connection-failure handling",
+				num_link_bssids, MAC2STR(bssid));
+
+		wpas_connection_failed(wpa_s, bssid,
+				       assoc_failure_include_mlo_links ?
+				       link_bssids : NULL);
+	}
 	wpa_sm_notify_disassoc(wpa_s->wpa);
 	ptksa_cache_flush(wpa_s->ptksa, wpa_s->bssid, WPA_CIPHER_NONE);
 
