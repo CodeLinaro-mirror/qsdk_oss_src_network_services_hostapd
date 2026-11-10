@@ -1538,7 +1538,8 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 		return false;
 	}
 
-	if (!freq_allowed(ssid->freq_list, bss->freq)) {
+	if (!freq_allowed(ssid->freq_list ? ssid->freq_list :
+			   wpa_s->conf->freq_list, bss->freq)) {
 		if (debug_print)
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"   skip - frequency not allowed");
