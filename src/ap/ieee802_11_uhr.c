@@ -21,6 +21,7 @@
 #include "wpa_auth_i.h"
 #include "ap_mlme.h"
 #include "ieee802_1x.h"
+#include "eth_p_1905.h"
 
 /* Fixed offset added to the current-AP DL Drain timer so it fires strictly
  * after any peer/lower-layer drain timers, preventing a race where multiple
@@ -1249,6 +1250,18 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 			ap_info->smd_ctx_valid = 1;
 			ap_info->smd_ctx = smd_ctx;
 		}
+	}
+
+	if (!hapd->eth_p_1905_ctx ||
+            !eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, mle.target_ap_mld_addr)) {
+		wpa_printf(MSG_INFO,
+			   "UHR Current AP: Target AP " MACSTR " unknown, declining ST Prep",
+			   MAC2STR(mle.target_ap_mld_addr));
+		uhr_cur_ap_send_st_prep_fail(hapd, sta, frame, frame_len,
+					     WLAN_STATUS_REJECTED_TARGET_AP_UNKNOWN);
+		if (is_new_ap)
+			uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
+		return -1;
 	}
 
 	wpa_printf(MSG_DEBUG, "UHR Current AP: Target AP validated, sending IAP request");
