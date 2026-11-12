@@ -13032,11 +13032,14 @@ skip_update:
 		}
 	}
 
-	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
+	/*
+	 * Multi-AP backhaul STA on a BSS with backhaul role: enable WDS at
+	 * association even while WPS is in progress, so that the 4-address
+	 * EAP frames sent by the STA are accepted.
+	 */
 	if (((sta->flags & WLAN_STA_WDS) && hapd->conf->wds_sta)||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
-	     (hapd->conf->multi_ap & BACKHAUL_BSS) &&
-	     !(sta->flags & WLAN_STA_WPS))) {
+	     (hapd->conf->multi_ap & BACKHAUL_BSS))) {
 		int ret;
 		char ifname_wds[IFNAMSIZ + 1];
 		int aid;

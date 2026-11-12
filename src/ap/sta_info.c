@@ -486,8 +486,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
-	    ((hapd->conf->multi_ap & FRONTHAUL_BSS)||(hapd->conf->multi_ap & BACKHAUL_BSS)) &&
-	    !(sta->flags & WLAN_STA_WPS))) {
+	    ((hapd->conf->multi_ap & FRONTHAUL_BSS)||(hapd->conf->multi_ap & BACKHAUL_BSS)))) {
 		int aid;
 
 		if (hapd->conf->mld_ap)
