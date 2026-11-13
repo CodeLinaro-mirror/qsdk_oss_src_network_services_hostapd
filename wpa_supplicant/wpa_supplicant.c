@@ -10050,8 +10050,23 @@ void wpas_connection_failed(struct wpa_supplicant *wpa_s, const u8 *bssid,
 	 * next. Otherwise, we may as well try this one once more
 	 * before allowing other, likely worse, ESSes to be considered.
 	 */
-	if (count == 1 && wpa_supplicant_fast_associate(wpa_s) == 1)
-		return;
+	if (count == 1) {
+		u8 pending[ETH_ALEN];
+
+		/*
+		 * wpa_supplicant_connect() refuses a retry to a BSS that is
+		 * still the pending attempt (the one that just failed), so
+		 * fast association may report success without starting any
+		 * new connection. In that case the retry scan must still be
+		 * scheduled below; otherwise the STA stays DISCONNECTED with
+		 * no scan armed.
+		 */
+		os_memcpy(pending, wpa_s->pending_bssid, ETH_ALEN);
+		if (wpa_supplicant_fast_associate(wpa_s) == 1 &&
+		    !(ether_addr_equal(pending, bssid) &&
+		      ether_addr_equal(wpa_s->pending_bssid, bssid)))
+			return;
+	}
 
 	wpa_s->consecutive_conn_failures++;
 
