@@ -1046,6 +1046,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	u8 *auth_ie_buf = NULL;
 	bool dpp_akm = false;
 	bool set_suites_done = false;
+	bool local_ft;
 	const u8 *sp_auth_ie = wpa_s->security_profile;
 	size_t sp_auth_ie_len = wpa_s->security_profile_len;
 
@@ -1409,8 +1410,10 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	if (ie && ie[1] >= MOBILITY_DOMAIN_ID_LEN)
 		md = ie + 2;
 	wpa_sm_set_ft_params(wpa_s->wpa, ie, ie ? 2 + ie[1] : 0);
-	if (md && (!wpa_key_mgmt_ft(ssid->key_mgmt) ||
-		   !wpa_key_mgmt_ft(wpa_s->key_mgmt)))
+	local_ft = wpa_key_mgmt_ft(ssid->key_mgmt) ||
+		(wpa_s->sel_security_profile &&
+		 wpa_key_mgmt_ft(wpa_s->sel_security_profile->key_mgmt));
+	if (md && (!local_ft || !wpa_key_mgmt_ft(wpa_s->key_mgmt)))
 		md = NULL;
 	if (md) {
 		/* Prepare for the next transition */
