@@ -5168,6 +5168,7 @@ qca_nl80211_handle_afc_events(struct i802_bss *bss,
 
 
 static void nl80211_vendor_event_qca(struct i802_bss *bss,
+				     bool *event_handled,
 				     u32 subcmd, u8 *data, size_t len)
 {
 	switch (subcmd) {
@@ -5232,7 +5233,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		break;
 	default:
 #ifdef CONFIG_QCN_EXTN
-		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
+		if (!nl80211_vendor_event_qca_extn(bss,
+						   event_handled,
+						   subcmd, data, len))
 			break;
 #endif /* CONFIG_QCN_EXTN */
 
@@ -5325,7 +5328,8 @@ static void nl80211_vendor_event_brcm(struct wpa_driver_nl80211_data *drv,
 #endif /* CONFIG_DRIVER_NL80211_BRCM */
 
 
-static void nl80211_vendor_event(struct i802_bss *bss, struct nlattr **tb)
+static void nl80211_vendor_event(struct i802_bss *bss,
+				 struct nlattr **tb, bool *event_handled)
 {
 	u32 vendor_id, subcmd, wiphy = 0;
 	int wiphy_idx;
@@ -5373,7 +5377,9 @@ static void nl80211_vendor_event(struct i802_bss *bss, struct nlattr **tb)
 
 	switch (vendor_id) {
 	case OUI_QCA:
-		nl80211_vendor_event_qca(bss, subcmd, data, len);
+		nl80211_vendor_event_qca(bss,
+					 event_handled,
+					 subcmd, data, len);
 		break;
 #ifdef CONFIG_DRIVER_NL80211_BRCM
 	case OUI_BRCM:
@@ -6410,7 +6416,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_stop_ap(bss, tb);
 		break;
 	case NL80211_CMD_VENDOR:
-		nl80211_vendor_event(bss, tb);
+		nl80211_vendor_event(bss, tb, event_handled);
 		break;
 	case NL80211_CMD_NEW_PEER_CANDIDATE:
 		nl80211_new_peer_candidate(drv, tb);
