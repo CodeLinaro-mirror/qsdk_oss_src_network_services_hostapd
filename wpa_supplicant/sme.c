@@ -915,6 +915,10 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	eppke_sp_ie = wpa_s->security_profile;
 	eppke_sp_ie_len = wpa_s->security_profile_len;
 
+	if (ssid && ssid->control_frame_protection &&
+	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK))
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
+
 	pasn_set_rsnxe_caps(pasn, capab);
 	pasn_set_initiator_pmksa(pasn, wpa_sm_get_pmksa_cache(wpa_s->wpa));
 

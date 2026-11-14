@@ -151,7 +151,11 @@ WPA_CIPHER_BIP_CMAC_256)
 /* Types 20-23: Device ID KDE (#11bh), IRM KDE, PASN ID KDE, Reserved */
 #define RSN_KEY_DATA_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 24)
 /* Type 25: Reserved (#199) */
-#define RSN_KEY_DATA_MLO_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 26)
+/* TODO: 27 is a stopgap pending spec confirmation of the correct
+ * IEEE P802.11bn KDE Data Type number for MLO CIGTK. It previously
+ * collided with RSN_KEY_DATA_UHR_SECURITY (both used 26), which caused
+ * every MLO CIGTK KDE to be misparsed as a UHR Security KDE. */
+#define RSN_KEY_DATA_MLO_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 27)
 #define RSN_KEY_DATA_SAE_PW_IDS RSN_SELECTOR(0x00, 0x0f, 0xac, 25)
 #define RSN_KEY_DATA_UHR_SECURITY RSN_SELECTOR(0x00, 0x0f, 0xac, 26)
 

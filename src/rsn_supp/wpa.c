@@ -2026,7 +2026,9 @@ wpa_supplicant_install_mlo_cigtk(struct wpa_sm *sm, u8 link_id,
 	size_t len = wpa_cipher_key_len(sm->control_group_cipher);
 	u16 keyidx = WPA_GET_LE16(cigtk->keyid);
 
-
+	wpa_printf(MSG_ERROR,
+		   "DBGDBG %s %d: ENTERED link_id=%u keyidx=%u len=%zu",
+		   __func__, __LINE__, link_id, keyidx, len);
 
 	/* Detect possible key reinstallation */
 	if ((sm->mlo.links[link_id].cigtk.cigtk_len == len &&
@@ -2063,6 +2065,10 @@ wpa_supplicant_install_mlo_cigtk(struct wpa_sm *sm, u8 link_id,
 	os_memcpy(sm->mlo.links[link_id].cigtk.cigtk, cigtk->cigtk,
 			  sm->mlo.links[link_id].cigtk.cigtk_len);
 
+	wpa_printf(MSG_ERROR,
+		   "DBGDBG %s %d: wpa_sm_set_key succeeded for link_id=%u keyidx=%u",
+		   __func__, __LINE__, link_id, keyidx);
+
 	return 0;
 }
 
@@ -2098,8 +2104,17 @@ static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 			    0) < 0)
 			return -1;
 	}
+	wpa_printf(MSG_ERROR,
+		   "DBGDBG %s %d: link_id=%u mlo_cigtk[link_id]=%p "
+		   "control_frame_prot=%d control_group_cipher=0x%x",
+		   __func__, __LINE__, link_id, ie->mlo_cigtk[link_id],
+		   sm->control_frame_prot, sm->control_group_cipher);
 	if ((ie->mlo_cigtk[link_id] && sm->control_frame_prot)) {
 		len = wpa_cipher_key_len(sm->control_group_cipher);
+		wpa_printf(MSG_ERROR,
+			   "DBGDBG %s %d: mlo_cigtk_len[link_id]=%zu expected=%zu",
+			   __func__, __LINE__, ie->mlo_cigtk_len[link_id],
+			   (size_t) (RSN_MLO_CIGTK_KDE_PREFIX_LENGTH + len));
 		if (ie->mlo_cigtk_len[link_id] !=
 		    RSN_MLO_CIGTK_KDE_PREFIX_LENGTH + len)
 			return -1;
@@ -2109,6 +2124,9 @@ static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 			    ie->mlo_cigtk[link_id],
 			    0) < 0)
 			return -1;
+		wpa_printf(MSG_ERROR,
+			   "DBGDBG %s %d: wpa_supplicant_install_mlo_cigtk succeeded for link_id=%u",
+			   __func__, __LINE__, link_id);
 	}
 
 	return 0;

@@ -3955,6 +3955,13 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 		return 0;
 	}
 
+	wpa_printf(MSG_ERROR,
+		   "DBGDBG %s %d: selector=0x%08x RSN_KEY_DATA_UHR_SECURITY=0x%08x "
+		   "RSN_KEY_DATA_MLO_CIGTK=0x%08x",
+		   __func__, __LINE__, selector,
+		   (unsigned int) RSN_KEY_DATA_UHR_SECURITY,
+		   (unsigned int) RSN_KEY_DATA_MLO_CIGTK);
+
 	if (left >= 1 && selector == RSN_KEY_DATA_UHR_SECURITY) {
 		/* KDE data: EID_Ext(1) + body */
 		ie->security_profile = p;
